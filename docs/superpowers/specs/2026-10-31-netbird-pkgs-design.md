@@ -10,6 +10,7 @@
 |---|---|---|
 | v1 | 2026-10-31 | 初稿：背景、约束、包设计、签名分发、流水线、安全模型 |
 | v2 | 2026-10-31 | 自检修订：修正发布触发链；补全 ipk 组装与可复现性、密钥轮换、发布原子性、测试策略、脚本接口契约、失败模式与恢复、版本与发布策略、许可合规；补齐 LuCI 二进制来源固定的具体机制；更新事实核查记录 |
+| v2.1 | 2026-10-31 | 补充自建管理面（自定义 management URL）与配置/状态存放说明；确认 GitHub 用户名为 `xyonium`；`/etc/netbird.env` 白名单增加 `SSL_CERT_FILE` |
 
 ## 1. 背景与目标
 
@@ -28,7 +29,8 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 3. 构建逻辑完全可审查、可在本机复现
 4. 修正上游打包中已确认的缺陷（详见 §7.2）
 5. 提供 LuCI 图形界面（从源码自建、钉版本）
-6. 为 OPNsense 侧保留独立扩展空间
+6. 支持自建管理面：可配置自定义 management URL（CLI 与 LuCI 两条路径），配置持久化并在重启/升级后保留
+7. 为 OPNsense 侧保留独立扩展空间
 
 ### 非目标
 
@@ -36,6 +38,7 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 - 不发布到 OpenWrt 官方源或 iStore 官方源（后者仅在将来可选提 PR）
 - 不替代 NetBird 服务端（self-hosted 管理面不在本仓库范围）
 - 本期不实现 OPNsense 构建（独立立项，见 §17）
+- 不内置自建服务端；本仓库只负责客户端与安装管理 URL 的链路（服务端部署镜像/编排不在范围）
 
 ## 2. 目标设备与运行环境
 
@@ -65,6 +68,9 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 | 上游 24.10 init 仅设 `NB_CONFIG=/etc/netbird/config.json`；master 仅设 `NB_STATE_DIR=/root/.config/netbird` 等 | 需同时固定 `NB_CONFIG` 与 `NB_STATE_DIR` 才能持久化（§7.2、§7.3）；两侧均无 `respawn` |
 | netbird 默认状态目录 `/var/lib/netbird`、默认配置 `/var/lib/netbird/default.json` | 不显式设 `NB_CONFIG`/`NB_STATE_DIR` 时配置会落在 tmpfs |
 | 上游 24.10 init 不读 `/etc/netbird.env`，`files/` 下仅有 `netbird.init` | 需自行消费白名单变量（§7.2 修正 4） |
+| netbird 默认管理面 `https://api.netbird.io:443`；`--management-url` 可覆盖 | 自建管理面无需改二进制，只需正确传参并持久化（§7.7） |
+| netbird 的 profile 路径默认 `<NB_STATE_DIR>/default.json`；`--config`/`NB_CONFIG` 可覆盖 | 本包固定 `NB_CONFIG=/etc/netbird/config.json`，与 LuCI 的探测路径一致（§7.7） |
+| LuCI 把 `management_url` 存 UCI `/etc/config/netbird`（`netbird.settings.management_url`），并通过 `netbird up --management-url` 传参 | UCI 配置持久、非机密；setup key 不落盘（§8、§11） |
 
 ## 4. 架构总览
 
@@ -89,7 +95,7 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 └─────────────────────────────────────────────────────────────┘
                           │
                           ▼
-      GitHub Pages（单次原子部署）：https://<user>.github.io/netbird-pkgs/
+      GitHub Pages（单次原子部署）：https://xyonium.github.io/netbird-pkgs/
         ├── aarch64_generic/{Packages,Packages.gz,Packages.sig,*.ipk}
         ├── x86_64/{...}
         ├── istore/{aarch64_cortex-a53 命名的 ipk}
@@ -121,6 +127,7 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 | 版本真相源 | `versions/netbird.env`（版本、commit、sha256、pkg release） | 只用 git tag；只用 Release 描述 | 单一位置、可 diff、可 revert；bot 提交即审计链 |
 | 回滚粒度 | feed 保留最近 2 个版本 + revert env 提交 | 只保留最新一版 | 设备侧 `opkg install netbird=<旧版>` 可直接降级 |
 | 自动化闸门 | 仅 LuCI 包升级需人工合并 PR | 全自动；或全部人工 | netbird 二进制来源单一且可复现；LuCI 以 root 运行且上游审查强度弱（§11），保留唯一人工闸门 |
+| 管理面 URL | 运行时由 CLI/LuCI 传入，持久化到 netbird profile 与 UCI | 编译期写死默认 URL | 自建用户必须能换服务端；默认 `api.netbird.io` 仅作兜底 |
 
 ## 6. 仓库结构
 
@@ -221,7 +228,7 @@ Section: net
 Category: Network
 Architecture: aarch64_generic | x86_64
 Installed-Size: <构建时计算，单位 KB>
-Maintainer: <user>
+Maintainer: xyonium
 License: BSD-3-Clause
 Description: NetBird client for OpenWrt
   ...（多行说明：来源、构建方式、仓库地址）
@@ -239,7 +246,7 @@ Description: NetBird client for OpenWrt
    该文件是 netifd 协议处理器库，仅被 `/lib/netifd/proto/*` 使用。netbird 不实现 netifd 协议，脚本中唯一相关的 `procd_add_interface_trigger` 实际定义在 `/lib/functions/procd.sh`（由 `rc.common` 自动加载）。该引用完全冗余（master 分支已移除，24.10 仍存在）。
 
 2. **状态目录 `/root/.config/netbird` → `/etc/netbird`**
-   netbird 默认把状态目录放在 `/var/lib/netbird`（OpenWrt 上是 tmpfs，重启即失），上游 master 的 init 改用 `/root/.config/netbird`（家目录在不同固件中的处理不一致）。`/etc` 是 OpenWrt 系统配置惯例位置，参与 sysupgrade 保留，且与 `luci-app-netbird` 的首选探测路径 `/etc/netbird/config.json` 一致。修正后凭据在重启与固件升级后都保留。
+   netbird 默认把状态目录放在 `/var/lib/netbird`（OpenWrt 上是 tmpfs，重启即失），上游 master 的 init 改用 `/root/.config/netbird`（家目录在不同固件中的处理不一致）。`/etc` 是 OpenWrt 系统配置惯例位置，参与 sysupgrade 保留；`luci-app-netbird` 的 `_mgmt_url_from_config` 也按 `/etc/netbird/config.json` → `/var/lib/netbird/config.json` 的顺序探测。修正后凭据在重启与固件升级后都保留。
 
 3. **增加 `procd_set_param respawn 3600 5 5`**
    上游未设置，进程崩溃后不会自动拉起。
@@ -287,7 +294,7 @@ append_env_from_file() {
 		key=${line%%=*}
 		val=${line#*=}
 		case "$key" in
-			NB_LOG_FILE|NB_LOG_LEVEL) ;;
+			NB_LOG_FILE|NB_LOG_LEVEL|SSL_CERT_FILE) ;;
 			*) continue ;;
 		esac
 		val=${val%\"}; val=${val#\"}
@@ -299,7 +306,7 @@ append_env_from_file() {
 设计要点：
 
 - `mkdir -p /var/lib/netbird` 每次启动执行（`/var` 是 tmpfs）。
-- 不 `source` `/etc/netbird.env`：该文件由 LuCI 创建、权限 0644，按 shell 执行会让任何可写者获得 root 代码执行。解析器只接受 `KEY=VALUE` 行，并做变量名白名单。
+- 不 `source` `/etc/netbird.env`：该文件由 LuCI 创建、权限 0644，按 shell 执行会让任何可写者获得 root 代码执行。解析器只接受 `KEY=VALUE` 行，并做变量名白名单（日志两项 + `SSL_CERT_FILE`，便于自建面使用私有 CA）。
 - `NB_CONFIG` 显式指向 `/etc/netbird/config.json`：netbird 的配置默认路径是 `/var/lib/netbird/default.json`（tmpfs），不设该变量则配置不持久。这与上游 24.10 init 的设置一致，也是 LuCI 的探测路径。
 - `umask 077` 保证 netbird 生成的 `config.json` 为 0600。
 - `respawn 3600 5 5`：1 小时内失败超过 5 次则停止拉起，避免崩溃循环刷日志。
@@ -357,7 +364,7 @@ dist/pkg/
 | 依赖 | 作用 | 说明 |
 |---|---|---|
 | `kmod-wireguard` | 内核 WireGuard 模块 | 与上游 OpenWrt 包保持一致；netbird 亦可使用内置 userspace wireguard-go。阶段 1 验证两种路径（§19） |
-| `ca-bundle` | TLS 根证书 | 与 `api.netbird.io` 握手所必需 |
+| `ca-bundle` | TLS 根证书 | 与官方或自建管理面握手所必需；自建面使用私有 CA 时见 §7.7 |
 
 系统集成风险（验收清单见 §12.4）：
 
@@ -365,6 +372,60 @@ dist/pkg/
 - **防火墙**：iStoreOS 使用 fw4/nftables；netbird 自建规则需与既有规则共存。
 - **SSH**：`NB_DISABLE_SSH_CONFIG=1` 阻止 netbird 修改 `sshd_config`。
 - **开机顺序**：`START=99` 在 network 之后启动；wan 未就绪时 netbird 自行重连，不依赖 `service_triggers`。
+
+### 7.7 配置、状态与自建管理面
+
+#### 存放位置
+
+| 路径 | 写入者 | 内容 | 重启后 | sysupgrade 后 |
+|---|---|---|---|---|
+| `/etc/config/netbird` | `luci-app-netbird`（UCI） | `management_url`、服务/防火墙/DNS/SSH 选项、`preshared_key`（应用负责 0600） | 保留 | 保留 |
+| `/etc/config/netbird_bin` | `luci-app-netbird`（UCI） | `binary_source`、`release_url` | 保留 | 保留 |
+| `/etc/netbird/config.json` | netbird（`NB_CONFIG`） | `ManagementURL`（对象）、WireGuard 私钥、预共享密钥、profile 选项；0600 | 保留 | 保留 |
+| `/etc/netbird/` | netbird（`NB_STATE_DIR`） | profile 状态（`active_profile.json` 等） | 保留 | 保留 |
+| `/var/lib/netbird/state.json` | netbird（`NB_DNS_STATE_FILE`） | DNS 运行状态 | 重建 | 不保留（tmpfs） |
+| `/var/run/netbird.pid` | procd | 进程号 | 重建 | — |
+| `/etc/netbird.env` | `luci-app-netbird` | 白名单环境变量（`NB_LOG_FILE`、`NB_LOG_LEVEL`、可选 `SSL_CERT_FILE`） | 保留 | 保留 |
+| `/etc/opkg/{customfeeds.conf,keys/}` | `install-feed.sh` | feed 地址与信任公钥 | 保留 | 保留 |
+
+要点：
+
+- 为什么 LuCI 的设置看起来「永久存在 `/etc/config`」：这是 OpenWrt 的 UCI 约定，`/etc/config` 在 sysupgrade 时默认保留，因此表现为持久存储。netbird 自己的 JSON 配置不在那里。
+- OpenWrt 的 `/etc/config/*` 是 UCI 配置目录，`luci-app-netbird` 沿用它保存自己的设置；本设计**不改动**该约定，也不会把 netbird 的 JSON 配置塞进 `/etc/config`。
+- netbird 自身的配置是 JSON，放 `/etc/netbird/config.json`；这与上游 24.10 init 的设置一致，也是 LuCI 的探测路径。
+- `/var` 是 tmpfs，只放可重建的运行状态；设备身份与连接配置必须放 `/etc` 才能在重启和升级后保留。
+- 备份/迁移设备身份 = 备份 `/etc/netbird/`（含私钥）与 `/etc/config/netbird`（含管理 URL 与选项）。
+- 写放大权衡：把 netbird 状态目录放 `/etc` 会带来少量 overlay 写入；高频的 DNS 状态已移到 `/var/lib/netbird`（tmpfs），避免频繁写闪存。
+
+#### 自建管理面（self-hosted）
+
+netbird 支持任意 management URL；`https://api.netbird.io:443` 只是未指定时的默认值。两条设置路径：
+
+```sh
+# CLI：一次性设置，成功后写入 /etc/netbird/config.json 的 ManagementURL
+netbird up --management-url https://netbird.example.com --setup-key <KEY>
+# 或从文件读取 setup key
+netbird up --management-url https://netbird.example.com --setup-key-file /tmp/setup-key
+```
+
+```
+LuCI：Services → NetBird → 认证页
+  填入 Management URL 与 Setup Key → 前端调用 do_up
+  URL 写入 UCI /etc/config/netbird 的 netbird.settings.management_url（非机密，用于展示与预填）
+  ucode 后端拼 `netbird up --management-url … --setup-key …`（参数经 shell_quote）
+```
+
+- 只需配置 management URL：signal / relay 端点由管理面在注册响应中下发，无需本地逐项配置。
+- `--management-url` 接受 `http(s)://host[:port]`；LuCI 后端校验 scheme 与 host。
+- setup key 不落盘：LuCI 只保留打码 hint（前 6 字符 + `*`），CLI 参数随进程结束消失。
+- 私有 CA：把 CA 追加进 `/etc/ssl/certs/ca-certificates.crt`（`/etc` 下持久，但 `ca-bundle` 升级后需重新追加），或在 `/etc/netbird.env` 设 `SSL_CERT_FILE=/etc/ssl/certs/<ca>.pem`（Go 在 CGO 关闭时读取该变量）。公共 CA（如 Let's Encrypt）无需额外操作。
+- 验证：
+
+```sh
+netbird status                 # Management: Connected
+netbird status --json | grep -o '"management"[^}]*'
+reboot && netbird status       # 配置持久，重启后仍连接
+```
 
 ## 8. 包设计：`luci-app-netbird`
 
@@ -394,6 +455,7 @@ dist/pkg/
 
 ### 8.3 与 `netbird` 包的关系
 
+- 管理 URL：应用把 `management_url` 存 UCI `/etc/config/netbird`（非机密，供展示/预填），并在 `do_up` 时通过 `netbird up --management-url` 传给客户端；实际生效值最终写入 `/etc/netbird/config.json`。
 - 文件不冲突：`netbird` 包提供 `/usr/bin/netbird` 与 `/etc/init.d/netbird`；`luci-app-netbird` 只提供 `/etc/config/netbird*`、`netbird-settings`、监控脚本与 rpcd 后端。
 - 上游 `luci-app-netbird` 会包装而非替换 daemon：其 `netbird-settings` 仅转发 `enable/start/stop` 到 `/etc/init.d/netbird`。
 - 若用户手动切换为 `release` 来源，`/usr/bin/netbird` 会变成符号链接，破坏包对该路径的所有权；这是已知残余风险，默认配置不会触发。
@@ -407,7 +469,7 @@ dist/pkg/
 ### 9.1 Feed 布局
 
 ```
-https://<user>.github.io/netbird-pkgs/
+https://xyonium.github.io/netbird-pkgs/
 ├── aarch64_generic/{Packages,Packages.gz,Packages.sig,*.ipk}
 ├── x86_64/{...}
 ├── istore/netbird_*_aarch64_cortex-a53.ipk
@@ -447,7 +509,7 @@ usign -F -p netbird-pkgs.pub                      # 指纹，16 位小写十六�
 
 ```sh
 # 1. 导入公钥（文件名必须是 16 位指纹；opkg-key 自动处理）
-wget -O /tmp/netbird-pkgs.pub https://<user>.github.io/netbird-pkgs/keys/netbird-pkgs.pub
+wget -O /tmp/netbird-pkgs.pub https://xyonium.github.io/netbird-pkgs/keys/netbird-pkgs.pub
 opkg-key add /tmp/netbird-pkgs.pub
 # 若无 opkg-key：FP=$(usign -F -p /tmp/netbird-pkgs.pub); cp /tmp/netbird-pkgs.pub "/etc/opkg/keys/$FP"
 ls /etc/opkg/keys/                 # 确认 16 位指纹文件已入库
@@ -455,7 +517,7 @@ ls /etc/opkg/keys/                 # 确认 16 位指纹文件已入库
 # 2. 添加 feed（按设备架构；取最高优先级的非 all/noarch 架构）
 ARCH=$(opkg print-architecture | awk '$1=="arch"{print $3, $2}' | sort -rn | awk 'NR==1{print $2}')
 grep -q '^src/gz netbird-pkgs ' /etc/opkg/customfeeds.conf 2>/dev/null || \
-  echo "src/gz netbird-pkgs https://<user>.github.io/netbird-pkgs/$ARCH" >> /etc/opkg/customfeeds.conf
+  echo "src/gz netbird-pkgs https://xyonium.github.io/netbird-pkgs/$ARCH" >> /etc/opkg/customfeeds.conf
 
 # 3. 安装
 opkg update && opkg install netbird luci-app-netbird
@@ -571,6 +633,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 | 外发域名 | 仅 `api.github.com` 与 `github.com/netbirdio/*`（版本查询/下载官方二进制） |
 | `setup_key` 持久化 | 不落盘；仅存打码 hint（前 6 字符 + `*`）；传参经 `shell_quote`；stdout 回显前替换为 `***` |
 | `config.json` 访问 | 只读，仅用于展示预填管理 URL |
+| 管理 URL 存储 | UCI `netbird.settings.management_url`，非机密；setup key 不落盘 |
 | ACL 范围 | 仅 `uci: netbird, netbird_bin` + 自身 ubus 对象；**无 file 权限、无任意 shell** |
 | 配置文件权限 | `chmod 0600`，纳入 `sysupgrade.conf` |
 | 重连守护脚本 | 无网络请求，不读取配置文件 |
@@ -636,7 +699,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 | `verify-ipk.bats` | 架构不符、缺依赖、init 语法错误、非静态链接各自返回非零 |
 | `resolve-upstream.bats` | 版本号比较；无新版本时输出 `CHANGED=0` |
 | `make-istore.bats` | 重打包后 `Architecture` 变为 `aarch64_cortex-a53`，其余字段不变 |
-| `netbird-init.bats` | `append_env_from_file` 只放行 `NB_LOG_FILE`/`NB_LOG_LEVEL`；忽略注释、空行与非法格式；带引号的值被还原；init 全文中不出现对 `/etc/netbird.env` 的 `source`/`.` 调用 |
+| `netbird-init.bats` | `append_env_from_file` 只放行 `NB_LOG_FILE`/`NB_LOG_LEVEL`/`SSL_CERT_FILE`；忽略注释、空行与非法格式；带引号的值被还原；init 全文中不出现对 `/etc/netbird.env` 的 `source`/`.` 调用 |
 
 ### 12.3 CI 校验清单
 
@@ -662,6 +725,13 @@ netbird status
 /etc/init.d/netbird enable && reboot
 pgrep -f 'netbird service run'     # 重启后自动拉起
 logread -e netbird | tail
+
+# 自建管理面（self-hosted）
+netbird up --management-url https://netbird.example.com --setup-key <KEY>
+netbird status                     # Management: Connected
+reboot
+netbird status                     # 重启后仍连接；配置在 /etc/netbird/config.json
+# LuCI 认证页应显示已保存的 Management URL；setup key 仅显示打码 hint
 
 # 升级与降级
 opkg update && opkg upgrade netbird
@@ -782,7 +852,7 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | 1 | 仓库骨架 + 构建脚本 + 单元测试，本机跑通 | `make lint test` 全绿；产出 ipk；`opkg install` 成功；`netbird version` 正确 |
 | 2 | 索引 + 签名 + 设备接入 | 两台设备 `opkg update` 验签通过，可安装、升级、降级 |
 | 3 | 全自动流水线 + 可复现性 | 新版自动落地并可在设备上升级；两次构建 sha256 一致；provenance 可验证 |
-| 4 | LuCI 集成 | Services → NetBird 可访问，能用 setup key 连接；`binary_source` 默认为 `opkg`；日志页有输出 |
+| 4 | LuCI 集成与自建面 | Services → NetBird 可访问；填入自建 management URL + setup key 能连接；重启后仍保持；`binary_source` 默认为 `opkg`；日志页有输出 |
 | 5 | OPNsense | 独立设计文档与实施 |
 
 每个阶段结束都必须通过对应的测试层（§12.1）与设备验收（§12.4），未通过不进下一阶段。
@@ -804,6 +874,7 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 11. opkg 在升级时对 `/etc/init.d/netbird`（非 conffile）的替换行为符合预期
 12. Pages 的 `cache-control: max-age=600` 在真实设备上不造成可感知的升级失败（必要时调整发布顺序或提示重试）
 13. `-X main.commit`、`-X main.date`、`-X main.builtBy` 注入后 `netbird version` 输出格式符合预期，且两次构建一致
+14. 自建管理面的 signal/relay 端点在目标网络可达；私有 CA 通过系统信任库或 `SSL_CERT_FILE` 生效
 
 ## 20. 附录：事实核查记录
 
@@ -831,6 +902,10 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | usign 指纹与 key 目录 | 16 位小写十六进制；`/etc/opkg/keys/<指纹>`；`opkg-key` 按此命名 | `usign` 源码、`openwrt/files/opkg-key`、24.10 `openwrt-keyring` |
 | ipk 外层格式 | gzip tar，顺序 `./debian-binary`、`./data.tar.gz`、`./control.tar.gz`（非 ar） | `openwrt/scripts/ipkg-build`，24.10 实际 ipk 验证 |
 | Pages 缓存 | 单对象 `cache-control: max-age=600` | GitHub Pages 实际响应头 |
+| netbird 默认管理面 | `https://api.netbird.io:443`，`--management-url` 覆盖 | v0.82.0 `client/internal/profilemanager/config.go`、`client/cmd/root.go` |
+| profile 路径 | 默认 `<NB_STATE_DIR>/default.json`；`--config`（`NB_CONFIG`）覆盖；旧路径 `/etc/netbird/config.json` 自动迁移 | v0.82.0 `profilemanager/service.go`、`root.go`、`profilemanager.NewServiceManager` |
+| LuCI 管理 URL 存储 | UCI `netbird.settings.management_url`；`do_up` 拼 `netbird up --management-url … --setup-key …` | 上游 `netbird.uc`（commit `cd812d9`） |
+| LuCI 探测 config.json | 依次探测 `/etc/netbird/config.json`、`/var/lib/netbird/config.json` | 同上 `_mgmt_url_from_config` |
 | FreeBSD port netbird | 0.81.5 | `cgit.freebsd.org` |
 | OPNsense 25.7 源 | `os-netbird-1.1`、`netbird-0.60.7` | `pkg.opnsense.org` 目录列表 |
 | OPNsense 26.1 源 | `os-netbird-1.3_3`、`netbird-0.72.2` | 同上 |
@@ -838,18 +913,18 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 
 ## 21. 需要使用者提供的信息
 
-本文档中的 `<user>` 指 GitHub 用户名占位符；`<ver>`、`<commit>`、`<arch>`、`<pkg_release>` 等为脚本参数或构建变量占位符，取值规则见 §6、§7.4、§15。实施阶段 0 开始前需确认以下输入，确认后一次替换到所有文件中：
+本文档中的 `xyonium` 指 GitHub 用户名占位符；`<ver>`、`<commit>`、`<arch>`、`<pkg_release>` 等为脚本参数或构建变量占位符，取值规则见 §6、§7.4、§15。实施阶段 0 开始前需确认以下输入，确认后一次替换到所有文件中：
 
 | 输入项 | 用途 | 当前状态 | 建议 |
 |---|---|---|---|
-| GitHub 用户名 / 组织 | Pages 域名 `https://<user>.github.io/netbird-pkgs/`、仓库地址 | **待提供** | — |
+| GitHub 用户名 / 组织 | Pages 域名 `https://xyonium.github.io/netbird-pkgs/`、仓库地址 | **已确认：`xyonium`**（`gh` 已登录）；仓库尚未创建，属阶段 0 | — |
 | 仓库可见性 | Pages 需公开仓库或付费计划；SLSA provenance 在公开仓库可用 | 待确认 | 公开 |
 | 默认分支名 | 工作流触发与分支保护 | 待确认 | `main` |
 | usign 密钥口令策略 | 私钥是否加口令 | 待确认 | 不加口令（CI 无人值守），靠 Secret 与 environment 保护 |
 | 是否启用 GitHub Pages 自定义域名 | 影响 feed URL 稳定性 | 待确认 | 默认用 `github.io` 域名 |
 | 分支保护强度 | 是否允许 bot 直接提交 `versions/*.env` | 待确认 | 禁止强推与删除，允许 bot 直接提交（否则需改用 PR 自动合并） |
 
-若 GitHub 用户名为空或与预期不符，所有替代 `<user>` 的位置将无法工作，故此项为实施前置条件。
+用户名已确认（`gh auth status` 显示 xyonium）；`xyonium/netbird-pkgs` 仓库尚未创建，阶段 0 创建并启用 Pages。
 
 ## 22. 许可合规
 
