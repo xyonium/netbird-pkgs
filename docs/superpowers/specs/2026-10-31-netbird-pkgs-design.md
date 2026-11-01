@@ -539,8 +539,8 @@ opkg-key add /tmp/netbird-pkgs.pub
 # 若无 opkg-key：FP=$(usign -F -p /tmp/netbird-pkgs.pub); cp /tmp/netbird-pkgs.pub "/etc/opkg/keys/$FP"
 ls /etc/opkg/keys/                 # 确认 16 位指纹文件已入库
 
-# 2. 添加 feed（按设备架构；取最高优先级的非 all/noarch 架构）
-ARCH=$(opkg print-architecture | awk '$1=="arch"{print $3, $2}' | sort -rn | awk 'NR==1{print $2}')
+# 2. 添加 feed（只在本 feed 支持的架构中选，忽略 iStore 的 cortex-a53 别名）
+ARCH=$(opkg print-architecture | awk '$1=="arch" && ($2=="aarch64_generic" || $2=="x86_64"){print $3, $2}' | sort -rn | awk 'NR==1{print $2}')
 grep -q '^src/gz netbird-pkgs ' /etc/opkg/customfeeds.conf 2>/dev/null || \
   echo "src/gz netbird-pkgs https://xyonium.github.io/netbird-pkgs/$ARCH" >> /etc/opkg/customfeeds.conf
 
@@ -799,14 +799,14 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 |---|---|---|---|
 | `resolve-upstream.sh` | `--repo <owner/name>` `[--env-file versions/netbird.env]` | stdout：`VERSION=… COMMIT=… SHA256=… CHANGED=0\|1` | 只查询 GitHub API；无变化时 `CHANGED=0` 且不下载 |
 | `build-netbird.sh` | `--arch <aarch64_generic\|x86_64>` `--version <v>` `--commit <sha>` `--source <dir>` `--outdir <dir>` `[--dry-run]` | `<outdir>/netbird` | 校验 `go version` 为 `go1.26.2`；编译后执行 `netbird version` 自检；`--dry-run` 仅打印命令 |
-| `build-netbird-ipk.sh` | `--arch <aarch64_generic\|x86_64>` `--version` `--binary` `--outdir` `[--pkg-release N]` `[--source-date-epoch N]` | `<outdir>/netbird_<ver>-r<N>_<arch>.ipk` + `.sha256` | 读取 `packaging/netbird/`；校验二进制可执行；固定 `SOURCE_DATE_EPOCH` |
+| `build-netbird-ipk.sh` | `--arch <aarch64_generic\|x86_64>` `--version` `--binary` `--license` `[--notices]` `--outdir` `[--pkg-release N]` `[--source-date-epoch N]` | `<outdir>/netbird_<ver>-r<N>_<arch>.ipk` + `.sha256` | 读取 `packaging/netbird/`；校验二进制可执行；固定 `SOURCE_DATE_EPOCH` |
 | `collect-licenses.sh` | `--mod-cache <dir>` `--out <file>` | `THIRD-PARTY-NOTICES.txt` | 遍历模块缓存收集 LICENSE，按模块名排序；缺失许可的模块记入报告但不中断（人工复核） |
-| `build-luci-ipk.sh` | `--source <dir>` `--version <v>` `--release <r>` `--sdk <dir>` `--outdir <dir>` | `luci-app-netbird_<ver>_all.ipk` + `.sha256` | 调用 OpenWrt SDK，应用 §8.2 补丁，补装 LICENSE/NOTICE（§22） |
+| `build-luci-ipk.sh` | `--source <dir>` `--version <v>` `--release <r>` `--sdk <dir>` `--outdir <dir>` `[--patch-only]` | `luci-app-netbird_<ver>_all.ipk` + `.sha256` | 调用 OpenWrt SDK，应用 §8.2 补丁，补装 LICENSE/NOTICE（§22） |
 | `make-feed.sh` | `--dir <feed>` `--arch <arch>` `[--retain N=2]` `[--ipk <path>]…` | 更新 `<feed>/Packages`、`Packages.gz` | 索引字段：`Package`、`Version`、`Depends`、`Architecture`、`Installed-Size`、`Filename`、`Size`、`SHA256sum`、`Section`、`Category`、`License`、`Description`；按 `Package`+`Version` 排序，`gzip -9n`；保留 N 个版本；拒绝索引中列出的文件缺失 |
 | `sign-feed.sh` | `--dir <feed>` `--key <secret-key>` 或 `--verify <pub-key>` | `Packages.sig`；`--verify` 时仅校验 | 签名后立刻自验签，失败即非零退出 |
 | `verify-ipk.sh` | `--ipk <path>` `--arch <arch>` | stdout 检查清单 | 对应 §12.3；失败项逐条列出 |
 | `make-istore.sh` | `--ipk-dir <dir>` `--outdir <dist/istore>` `[--version]` `[--pkg-release]` | iStore bundle（`bin/packages/...` + `applications/app-meta-netbird/`） | 重打包 aarch64 → `aarch64_cortex-a53`；复制 x86_64 / `all` 包；渲染元数据；校验目录与命名（§16） |
-| `install-feed.sh` | `--feed-url` `[--key-url]` `[--arch auto]` `[--root <dir>]` `[--yes]` | 设备端配置变更 | root 运行；`--root` 仅供测试/容器重定向（默认 `/`）；优先用 `opkg-key add` 导入公钥（回退 `usign -F` + 复制到 `/etc/opkg/keys/<16 位指纹>`）；幂等写入 `/etc/opkg/customfeeds.conf`；`--arch auto` 由 `opkg print-architecture` 取最高优先级架构推断 |
+| `install-feed.sh` | `--feed-url` `[--key-url \| --key-file]` `[--arch auto]` `[--root <dir>]` `[--yes]` | 设备端配置变更 | root 运行；`--root` 仅供测试/容器重定向（默认 `/`）；优先用 `opkg-key add` 导入公钥（回退 `usign -F` + 复制到 `/etc/opkg/keys/<16 位指纹>`）；幂等写入 `/etc/opkg/customfeeds.conf`；`--arch auto` 由 `opkg print-architecture` 取最高优先级架构推断 |
 
 补充约束：
 
