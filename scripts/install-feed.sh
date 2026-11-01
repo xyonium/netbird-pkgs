@@ -57,7 +57,18 @@ if [ -n "$key_url" ] && [ -z "$key_file" ]; then
 	key_file="$tmp/feed.pub"
 	case "$key_url" in
 		file://*) cp "${key_url#file://}" "$key_file" ;;
-		*) wget -q -O "$key_file" "$key_url" ;;
+		*)
+			if command -v wget >/dev/null 2>&1; then
+				wget -q -O "$key_file" "$key_url"
+			elif command -v curl >/dev/null 2>&1; then
+				curl -fsSL -o "$key_file" "$key_url"
+			elif command -v uclient-fetch >/dev/null 2>&1; then
+				uclient-fetch -q -O "$key_file" "$key_url"
+			else
+				echo "no downloader available (wget/curl/uclient-fetch)" >&2
+				exit 1
+			fi
+			;;
 	esac
 fi
 

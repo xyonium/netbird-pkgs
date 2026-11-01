@@ -62,14 +62,23 @@ make -C "$sdk" package/luci-app-netbird/compile V=s
 
 ipk=$(find "$sdk/bin/packages" -name "luci-app-netbird_${version}-r${release}_all.ipk" | head -n 1)
 [ -n "$ipk" ] || { echo "luci-app-netbird ipk not produced" >&2; exit 1; }
-cp "$ipk" "$outdir/"
-( cd "$outdir" && sha256sum "$(basename "$ipk")" > "$(basename "$ipk").sha256" )
 
-# Ship license/NOTICE alongside the LuCI package data.
+# Add the upstream license files to the package data, since luci.mk does not.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT INT TERM
+tar -xzf "$ipk" -C "$work"
+mkdir -p "$work/data/usr/share/doc/luci-app-netbird"
 for f in LICENSE NOTICE; do
-	if [ -f "$dest/$f" ]; then
-		cp "$dest/$f" "$outdir/"
-	fi
+	[ -f "$dest/$f" ] && cp "$dest/$f" "$work/data/usr/share/doc/luci-app-netbird/$f"
 done
+epoch=${SOURCE_DATE_EPOCH:-0}
+tar_opts="--sort=name --mtime=@$epoch --owner=0 --group=0 --numeric-owner"
+data_entries=$(cd "$work/data" && find . -mindepth 1 -maxdepth 1)
+# shellcheck disable=SC2086
+tar -C "$work/data" $tar_opts -cf - $data_entries | gzip -9n > "$work/data.tar.gz"
+out="$outdir/$(basename "$ipk")"
+# shellcheck disable=SC2086
+tar -C "$work" $tar_opts -cf - ./debian-binary ./data.tar.gz ./control.tar.gz | gzip -9n > "$out"
+( cd "$outdir" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256" )
 
-echo "built $outdir/$(basename "$ipk")"
+echo "built $out"

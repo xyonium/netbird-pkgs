@@ -20,7 +20,7 @@ env:
 
 jobs:
   build:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -40,7 +40,7 @@ jobs:
         run: |
           set -eu
           . versions/netbird.env
-          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/${NETBIRD_COMMIT}" -o /tmp/src.tar.gz
+          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/v${NETBIRD_VERSION}" -o /tmp/src.tar.gz
           echo "${NETBIRD_SHA256}  /tmp/src.tar.gz" | sha256sum -c -
           mkdir -p src
           tar -xzf /tmp/src.tar.gz -C src --strip-components=1
@@ -72,17 +72,23 @@ jobs:
           . versions/netbird.env
           scripts/verify-ipk.sh --ipk "dist/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_${{ matrix.arch }}.ipk" \
             --arch "${{ matrix.arch }}" --version "$NETBIRD_VERSION"
+      - name: Checksums
+        run: |
+          set -eu
+          sha256sum dist/*.ipk > "dist/SHA256SUMS.${{ matrix.arch }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: netbird-${{ matrix.arch }}
           path: dist/
 
   build-luci:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - name: Fetch LuCI source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,7 +131,7 @@ jobs:
           set -eu
           . versions/netbird.env
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct versions/netbird.env)" >> "$GITHUB_ENV"
-          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/${NETBIRD_COMMIT}" -o /tmp/src.tar.gz
+          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/v${NETBIRD_VERSION}" -o /tmp/src.tar.gz
           mkdir -p src
           tar -xzf /tmp/src.tar.gz -C src --strip-components=1
           for i in 1 2; do
@@ -139,7 +145,7 @@ jobs:
               "dist2/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_x86_64.ipk"
 
   sign-publish:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     needs: [build, build-luci]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -154,6 +160,15 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Fetch previous releases for rollback
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          mkdir -p artifacts
+          gh release list --limit 3 --json tagName --jq '.[].tagName' | while read -r tag; do
+            gh release download "$tag" --pattern '*.ipk' --dir artifacts --clobber || true
+          done
       - name: Assemble signed feeds
         env:
           USIGN_SECRET_KEY_B64: ${{ secrets.USIGN_SECRET_KEY_B64 }}
@@ -179,14 +194,15 @@ jobs:
           set -eu
           . versions/netbird.env
           tag="v${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}"
-          gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS \
+          tar -czf dist/istore-bundle.tar.gz -C dist istore
+          gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz \
             --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "artifacts/*.ipk"
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: pages
+          path: dist/pages
 
   deploy-pages:
     needs: sign-publish
