@@ -125,6 +125,15 @@ jobs:
             ls -la >&2
             [ -d bin ] && find bin -maxdepth 4 -type d >&2 || echo "  no bin/ in the workspace" >&2
             find . -path ./.git -prune -o -name '*.ipk' -print >&2 | head -20
+            if [ -d logs ]; then
+              find logs -type f >&2 | head -30
+              for f in $(find logs -type f -path '*luci-app-netbird*' | head -5); do
+                echo "=== $f ===" >&2
+                tail -80 "$f" >&2
+              done
+            else
+              echo "  no logs/ in the workspace" >&2
+            fi
             exit 1
           fi
           cp "$ipk" dist/
