@@ -12,6 +12,7 @@
 | v2 | 2026-10-31 | 自检修订：修正发布触发链；补全 ipk 组装与可复现性、密钥轮换、发布原子性、测试策略、脚本接口契约、失败模式与恢复、版本与发布策略、许可合规；补齐 LuCI 二进制来源固定的具体机制；更新事实核查记录 |
 | v2.1 | 2026-10-31 | 补充自建管理面（自定义 management URL）与配置/状态存放说明；确认 GitHub 用户名为 `xyonium`；`/etc/netbird.env` 白名单增加 `SSL_CERT_FILE` |
 | v2.2 | 2026-11-01 | 澄清范围边界：客户端完整支持自建管理面；服务端组件的分发与部署仍不在本仓库；修正非目标表述 |
+| v2.3 | 2026-11-01 | 按 iStoreOS 实际 PR 机制重写上架章节：预编译 ipk + `pending` 分支 + `openwrt-app-meta` 元数据；新增 iStore bundle 产物、脚本契约与测试 |
 
 ## 1. 背景与目标
 
@@ -33,12 +34,13 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 4. 修正上游打包中已确认的缺陷（详见 §7.2）
 5. 提供 LuCI 图形界面（从源码自建、钉版本）
 6. 支持自建管理面（客户端侧）：可配置自定义 management URL（CLI 与 LuCI 两条路径）、支持私有 CA，配置持久化并在重启/升级后保持连接
-7. 为 OPNsense 侧保留独立扩展空间
+7. 预留 iStoreOS 上架路径：产出符合 `istore-repo` 目录/命名规范的预编译 ipk 与 `app-meta` 元数据，可按其 PR 流程提交
+8. 为 OPNsense 侧保留独立扩展空间
 
 ### 非目标
 
 - 不追求覆盖 OpenWrt 全架构矩阵（仅两架构）
-- 不发布到 OpenWrt 官方源或 iStore 官方源（后者仅在将来可选提 PR）
+- 不发布到 OpenWrt 官方源；iStoreOS 商店上架走人工 PR（§16），不把自建源注册成 iStore 源（机制上不可行）
 - 不打包、分发或部署 NetBird 服务端组件（`management/`、`signal/`、`relay/`、`combined/`）：服务端由使用者自行部署（官方 self-hosted 方案或既有实例），本仓库只保证**客户端**能指向并与自建管理面互通
 - 不提供服务器侧的镜像、编排、备份与升级工具（如需要可另立项）
 - 本期不实现 OPNsense 构建（独立立项，见 §17）
@@ -53,6 +55,8 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 两台设备架构相同，共用同一份包。iStoreOS 基于 OpenWrt 24.10，包管理器为 `opkg`（ipk 格式），**不是** 25.x 之后的 `apk`。
 
 `x86_64` 产物面向通用 x86 软路由与虚拟机：本期无固定验收设备，只做 CI 构建、结构与静态链接校验（§12.3），并在需要时用 x86 OpenWrt rootfs 做一次容器安装（§12.1 L4）。
+
+架构命名有两套：本机 opkg feed 用设备实际架构 `aarch64_generic`；iStore 商店要求 aarch64 的 ipk 标注为 `aarch64_cortex-a53`（§16），由同一份二进制重打包得到。两者不混用：设备日常升级走自建 feed，iStore 只用于商店分发。
 
 ## 3. 关键约束（实测确认，非推测）
 
@@ -131,6 +135,7 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 | 回滚粒度 | feed 保留最近 2 个版本 + revert env 提交 | 只保留最新一版 | 设备侧 `opkg install netbird=<旧版>` 可直接降级 |
 | 自动化闸门 | 仅 LuCI 包升级需人工合并 PR | 全自动；或全部人工 | netbird 二进制来源单一且可复现；LuCI 以 root 运行且上游审查强度弱（§11），保留唯一人工闸门 |
 | 管理面 URL | 运行时由 CLI/LuCI 传入，持久化到 netbird profile 与 UCI | 编译期写死默认 URL | 自建用户必须能换服务端；默认 `api.netbird.io` 仅作兜底 |
+| iStoreOS 上架 | 预编译 ipk PR（`istore-repo`）+ `openwrt-app-meta` 元数据 PR | 把自建 feed 注册为 iStore 源；给 iStore 提 Makefile | `istore-repo` 只收编译产物，索引由其 CI 生成；自建源无法注册 |
 
 ## 6. 仓库结构
 
@@ -146,8 +151,11 @@ netbird-pkgs/
 │   ├── netbird/
 │   │   ├── control.in
 │   │   └── netbird.init
-│   └── luci-app-netbird/
-│       └── patches/0001-default-binary-source-opkg.patch
+│   ├── luci-app-netbird/
+│   │   └── patches/0001-default-binary-source-opkg.patch
+│   └── istore/app-meta-netbird/
+│       ├── Makefile
+│       └── logo.png
 ├── scripts/
 │   ├── resolve-upstream.sh
 │   ├── build-netbird-ipk.sh
@@ -174,6 +182,7 @@ netbird-pkgs/
 │   ├── THREAT-MODEL.md
 │   ├── REVIEW.md
 │   ├── INSTALL.md
+│   ├── ISTORE-PR.md
 │   └── superpowers/specs/2026-10-31-netbird-pkgs-design.md
 ├── LICENSE
 ├── Makefile
@@ -194,6 +203,7 @@ netbird-pkgs/
 | `README.md` | 项目定位、feed 地址、安装命令、公钥指纹、构建方式、许可证 |
 | `docs/INSTALL.md` | 设备接入、验收清单、故障排查、`service_triggers` 可选启用方法 |
 | `docs/REVIEW.md` | 上游包审计结论、本地修正清单、LuCI 副作用与 NOTICE 缺口 |
+| `docs/ISTORE-PR.md` | iStoreOS 上架：bundle 内容、PR 模板、元数据字段、被拒后的退路 |
 | `docs/THREAT-MODEL.md` | 信任边界、攻击面、密钥轮换与残余风险 |
 
 ### `versions/netbird.env` — 唯一版本真相源
@@ -233,6 +243,7 @@ Architecture: aarch64_generic | x86_64
 Installed-Size: <构建时计算，单位 KB>
 Maintainer: xyonium
 License: BSD-3-Clause
+SourceDateEpoch: <SOURCE_DATE_EPOCH>
 Description: NetBird client for OpenWrt
   ...（多行说明：来源、构建方式、仓库地址）
 ```
@@ -340,6 +351,8 @@ go build -trimpath -buildvcs=false -buildmode=exe \
 
 ipk 组装不依赖 OpenWrt SDK：ipk 是包含 `debian-binary`、`control.tar.gz` 与 `data.tar.gz` 的 gzip 压缩 tar 归档，由 `scripts/build-netbird-ipk.sh` 用标准 `tar`/`gzip` 生成。
 
+**为什么不是 OpenWrt Makefile**：OpenWrt 源码 feed 的 Go 包依赖 SDK 内的 `lang/golang`；24.10 只有 Go 1.23.12，无法编译 0.82.0，因此在官方源可用之前不存在可用的 Makefile 构建路径。iStore 商店只收预编译 ipk（§16），所以本仓库以标准 ipk 为交付物，`control`、init、文件布局与命名仍遵循 OpenWrt 包规范。
+
 ### 7.5 ipk 组装与可复现性
 
 组装目录：
@@ -360,7 +373,8 @@ dist/pkg/
 - 依赖 GNU tar（`--sort`、`--mtime`）；CI 的 `ubuntu-latest` 自带，macOS 本机构建需 `gtar` 或容器。
 - 确定性：`tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --owner=0 --group=0 --numeric-owner`，`gzip -9n`；`SOURCE_DATE_EPOCH` 取版本提交时间。
 - 同一输入（版本、Go 工具链、`SOURCE_DATE_EPOCH`）两次构建的 ipk sha256 必须一致；该检查在阶段 3 起进入 CI（§12.1 L6）。
-- 产物命名：`netbird_<upstream>-r<pkg_release>_<arch>.ipk`，同时输出同名 `.sha256`。
+- 产物命名：`netbird_<upstream>-r<pkg_release>_<arch>.ipk`，同时输出同名 `.sha256`。文件名含版本且不可变，满足 iStore「每次上传不能重名」的要求。
+- 架构命名：feed 产物用 `aarch64_generic` / `x86_64`；iStore 变体另行重打包为 `aarch64_cortex-a53`（§16），不覆盖原产物。
 
 ### 7.6 运行时依赖与系统集成
 
@@ -477,11 +491,13 @@ reboot && netbird status       # 配置持久，重启后仍连接
 https://xyonium.github.io/netbird-pkgs/
 ├── aarch64_generic/{Packages,Packages.gz,Packages.sig,*.ipk}
 ├── x86_64/{...}
-├── istore/netbird_*_aarch64_cortex-a53.ipk
+├── istore/{netbird_*_aarch64_cortex-a53.ipk, luci-app-netbird_*_all.ipk}
 └── keys/netbird-pkgs.pub
 ```
 
 `luci-app-netbird` 为 `Architecture: all`，同一 ipk 复制进两个架构目录并各自列入索引（设备只添加自己架构的 feed，因此不能放在共享目录）。
+
+`istore/` 目录只用于手动安装与上架 artifact 备份，不是 opkg feed：其中的 aarch64 包是 `aarch64_cortex-a53` 变体（§16），混入主 feed 会导致架构不匹配。
 
 ### 9.2 签名机制
 
@@ -592,7 +608,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 1. 下载全部 artifact，核对 `SHA256SUMS`（防止 artifact 被替换）
 2. 从 GitHub Release 取回上一版 ipk（保留 2 个版本）
 3. `scripts/make-feed.sh` 重建三个 feed 目录的索引；`Architecture: all` 的 LuCI ipk 复制进两个架构目录并各自列入索引
-4. `scripts/make-istore.sh` 生成 `aarch64_cortex-a53` 变体
+4. `scripts/make-istore.sh` 生成 iStore 上架 bundle（aarch64_cortex-a53 重打包 + x86_64/LuCI/i18n 复制 + 元数据渲染），随 Release 发布
 5. `scripts/sign-feed.sh` 签名并自验签
 6. 创建 GitHub Release（tag `v<upstream>-r<pkg_release>`，资产含 ipk、`SHA256SUMS`、许可汇总）
 7. `actions/attest-build-provenance` 生成 SLSA provenance
@@ -625,6 +641,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 | `luci-app-netbird` | root（LuCI/ubus） | 可读任意文件，含 `config.json` |
 | 本仓库 CI | 写 Release + 持签名私钥 | 上游投毒可致污染产物 |
 | `release` environment 密钥 | 仅签名 job 可见 | 工作流配置错误会扩大暴露面 |
+| iStore 上架后的分发 | 由 iStoreOS 的 feed 信任 | 脱离本仓库 `usign` 校验，版本可能滞后 |
 
 **任何** LuCI 应用以 root 运行，理论上都能读取私钥。因此控制目标不是「阻止单点访问」，而是「限制可信集合 + 可检测 + 可撤销」。
 
@@ -703,7 +720,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 | `sign-feed.bats` | 签名后可验签；篡改 `Packages` 后验签失败；缺私钥时非零退出 |
 | `verify-ipk.bats` | 架构不符、缺依赖、init 语法错误、非静态链接各自返回非零 |
 | `resolve-upstream.bats` | 版本号比较；无新版本时输出 `CHANGED=0` |
-| `make-istore.bats` | 重打包后 `Architecture` 变为 `aarch64_cortex-a53`，其余字段不变 |
+| `make-istore.bats` | 重打包后 `Architecture` 变为 `aarch64_cortex-a53`，其余字段不变；bundle 目录/文件名符合 iStore 规范；元数据 Makefile 字段随版本渲染；不覆盖输入 ipk |
 | `netbird-init.bats` | `append_env_from_file` 只放行 `NB_LOG_FILE`/`NB_LOG_LEVEL`/`SSL_CERT_FILE`；忽略注释、空行与非法格式；带引号的值被还原；init 全文中不出现对 `/etc/netbird.env` 的 `source`/`.` 调用 |
 
 ### 12.3 CI 校验清单
@@ -717,6 +734,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 - init 脚本 `sh -n` 通过
 - 二进制自检：`netbird version` 输出与 `versions/netbird.env` 的版本一致（x86_64 原生；arm64 经 qemu）
 - feed：`Packages.gz` 可解压、`usign -V` 验签通过、每个 `Filename` 对应文件存在且 sha256 一致
+- iStore bundle：目录与文件名匹配 `bin/packages/<arch>/<category>/`；`Architecture` 与目录一致；`control` 可被 iStore CI 的 `tar -xOf … ./control.tar.gz | tar -xOz ./control` 提取出 `Package`；元数据 Makefile 的 `PKG_VERSION` 与主包一致
 
 ### 12.4 设备验收清单
 
@@ -781,7 +799,7 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 | `make-feed.sh` | `--dir <feed>` `--arch <arch>` `[--retain N=2]` `[--ipk <path>]…` | 更新 `<feed>/Packages`、`Packages.gz` | 索引字段：`Package`、`Version`、`Depends`、`Architecture`、`Installed-Size`、`Filename`、`Size`、`SHA256sum`、`Section`、`Category`、`License`、`Description`；按 `Package`+`Version` 排序，`gzip -9n`；保留 N 个版本；拒绝索引中列出的文件缺失 |
 | `sign-feed.sh` | `--dir <feed>` `--key <secret-key>` 或 `--verify <pub-key>` | `Packages.sig`；`--verify` 时仅校验 | 签名后立刻自验签，失败即非零退出 |
 | `verify-ipk.sh` | `--ipk <path>` `--arch <arch>` | stdout 检查清单 | 对应 §12.3；失败项逐条列出 |
-| `make-istore.sh` | `--ipk <path>` `--outdir` | `<outdir>/netbird_<ver>-r<N>_aarch64_cortex-a53.ipk` | 解包 → 改写 `Architecture` → 重新归档（§16） |
+| `make-istore.sh` | `--ipk-dir <dir>` `--outdir <dist/istore>` `[--version]` `[--pkg-release]` | iStore bundle（`bin/packages/...` + `applications/app-meta-netbird/`） | 重打包 aarch64 → `aarch64_cortex-a53`；复制 x86_64 / `all` 包；渲染元数据；校验目录与命名（§16） |
 | `install-feed.sh` | `--feed-url` `[--key-url]` `[--arch auto]` `[--yes]` | 设备端配置变更 | root 运行；优先用 `opkg-key add` 导入公钥（回退 `usign -F` + 复制到 `/etc/opkg/keys/<16 位指纹>`）；幂等写入 `/etc/opkg/customfeeds.conf`；`--arch auto` 由 `opkg print-architecture` 取最高优先级架构推断 |
 
 补充约束：
@@ -817,17 +835,70 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 - **发布不可变**：已存在的 tag 与 Release 不覆盖；需要重发时递增 `PKG_RELEASE`。
 - **审计链**：`versions/netbird.env` 的提交历史即版本台账；bot 提交信息包含版本、commit 与触发工作流 run id。
 
-## 16. iStore 兼容
+## 16. iStoreOS 上架（PR 路径）
 
-iStore 官方源（[istoreos/istore-repo](https://github.com/istoreos/istore-repo)）为人工 PR 审核制，索引由官方服务器生成，老版客户端 `is-opkg` 中 `FEEDS_SERVER` 硬编码。因此**无法**将自建源直接注册为 iStore 源。
+### 机制事实（2026-11-01 核实）
 
-可行路径：
+- [`istoreos/istore-repo`](https://github.com/istoreos/istore-repo) 存放**已编译**的 ipk/apk，不是源码 Makefile 仓库；索引在合并后由上游 CI 用 `openwrt-sdk-mini-25.12.2` 生成。
+- PR 目标分支必须是 `pending`；只允许在 `bin/` 下新增包文件，不能改 `.github/workflows`；合并时自动清理同包旧版本。
+- 目录：`bin/packages/<arch>/<category>/<pkg>_<version>-r<release>_<arch>.ipk`；架构目录为 `aarch64_cortex-a53`、`x86_64`、`all`；类别常用 `nas`（二进制）与 `nas_luci`（LuCI）。
+- 文件名必须带版本且不可重复；aarch64 的 ipk 必须标为 `aarch64_cortex-a53`。
+- 新软件还需向 [`linkease/openwrt-app-meta`](https://github.com/linkease/openwrt-app-meta) 提交 `applications/app-meta-<name>/{Makefile,logo.png}`；`istore-repo` 的 PR 模板要求附上该 PR 链接。
+- README 规定「不要提交 OpenWrt 官方仓库已有的包」，但存在反例：`tailscale` 在官方源，`istore-repo` 仍收录 `tailscale_1.104.1-r1_*`。因此 netbird 可以按「官方版本过旧」提交并说明，但不能保证被接受。
 
-1. 额外产出 `aarch64_cortex-a53` 命名的 ipk：`scripts/make-istore.sh` 解包 → 把 `control` 的 `Architecture` 改为 `aarch64_cortex-a53` → 重新归档。仅改名不改 `control` 会被 opkg 判为架构不兼容。
-2. 通过 iStore 的「手动安装」入口上传该 ipk（`luci-app-netbird` 为 `all`，直接使用常规产物）
-3. 将来如愿意，可向上游 `istore-repo` 提 PR 进入商店列表
+### 本仓库产出：PR-ready bundle
 
-该变体放在 `istore/` 目录，不混入主 feed（避免 opkg 架构不匹配报错）。GUI 的实际来源是 `luci-app-netbird`（LuCI 原生接口），不依赖 iStore。
+`scripts/make-istore.sh` 生成一个可直接复制进 PR 的目录：
+
+```
+dist/istore/
+├── bin/packages/
+│   ├── aarch64_cortex-a53/nas/netbird_<ver>-r<N>_aarch64_cortex-a53.ipk
+│   ├── x86_64/nas/netbird_<ver>-r<N>_x86_64.ipk
+│   └── all/nas_luci/
+│       ├── luci-app-netbird_<luci-ver>-r<rel>_all.ipk
+│       └── luci-i18n-netbird-zh-cn_<luci-ver>-r<rel>_all.ipk（若 luci.mk 产出）
+└── applications/app-meta-netbird/
+    ├── Makefile
+    └── logo.png
+```
+
+- aarch64 变体由 `aarch64_generic` 产物重打包 `Architecture` 得到，二进制不变；x86_64 直接复制。
+- 元数据 `Makefile` 由 `packaging/istore/app-meta-netbird/Makefile` 渲染（含标准头与 `include ../../meta.mk`），关键字段：
+
+```
+PKG_VERSION:=<netbird 版本>
+PKG_RELEASE:=<pkg release>
+META_TITLE:=NetBird
+META_TITLE.en:=NetBird
+META_DEPENDS:=+netbird +luci-app-netbird
+META_DESCRIPTION:=基于 WireGuard 的自托管虚拟局域网客户端，支持自建管理面
+META_DESCRIPTION.en:=WireGuard-based mesh VPN client with self-hosted management support
+META_AUTHOR:=NetBird GmbH / looong-cat
+META_ARCH:=x86_64 aarch64
+META_TAGS:=networking service
+META_LUCI_ENTRY:=/cgi-bin/luci/admin/services/netbird
+META_WEBSITE:=https://netbird.io
+```
+
+- `logo.png` ≤ 256×256、≤ 50KB；使用 NetBird 官方标志并注明来源，遵循其商标/品牌使用政策。
+- 若 `luci-app-netbird` 产出 `luci-i18n-netbird-zh-cn`，一并放入 `all/nas_luci/`（与 `tailscale` 的做法一致）。
+
+### PR 步骤（人工执行，不进 CI 自动化）
+
+1. **元数据 PR**：fork `openwrt-app-meta` → 从 `main` 拉临时分支 → 把 `dist/istore/applications/app-meta-netbird/` 原样复制进 fork 的 `applications/` → 提交 PR。
+2. **ipk PR**：fork `istore-repo` → 从 `main` 拉临时分支 → 把 `dist/istore/bin/packages/**` 原样复制到 fork 的 `bin/packages/**` → 目标分支选 `pending`。
+3. 填写 PR 模板：文件已上传、目标分支 `pending`、源码仓库 `https://github.com/xyonium/netbird-pkgs`、元数据 PR 链接。
+4. PR 描述说明：官方源 `netbird` 仍为 0.59.13，本包为 0.82.0；`luci-app-netbird` 为第三方包（官方源没有），两者配合使用。
+5. 合并由上游维护者决定；索引由上游 CI 生成，本仓库**不写** iStore 索引、不改其 workflows。
+
+### 风险与边界
+
+- **规则冲突**：netbird 属于官方源已有包；`tailscale` 先例说明可尝试，但不保证接受。若被拒：保留自建签名 feed（功能不受影响），只上架官方没有的 `luci-app-netbird`。
+- **信任链转移**：上架后由 iStore 分发，不再经过本仓库的 `usign` 校验；iStoreOS 的 feed 信任由系统负责。自建签名 feed 仍是权威来源，设备可同时添加，opkg 按版本取新。
+- **架构差异**：iStore 要求 aarch64 用 `aarch64_cortex-a53`；设备实际 opkg 架构是 `aarch64_generic`。手动安装请走自建 feed，不要混用两套架构的包（§19 待验证 iStore 安装器的架构处理）。
+- **仅 ipk**：本期只交 opkg 产物（24.10）；25.x 的 apk 另立工作项。
+- **元数据维护**：`PKG_VERSION` 跟随 netbird 主包；`PKG_RELEASE` 在版本不变、只改元数据时递增。
 
 ## 17. OPNsense 扩展（独立立项）
 
@@ -858,7 +929,8 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | 2 | 索引 + 签名 + 设备接入 | 两台设备 `opkg update` 验签通过，可安装、升级、降级 |
 | 3 | 全自动流水线 + 可复现性 | 新版自动落地并可在设备上升级；两次构建 sha256 一致；provenance 可验证 |
 | 4 | LuCI 集成与自建面 | Services → NetBird 可访问；填入自建 management URL + setup key 能连接；重启后仍保持；`binary_source` 默认为 `opkg`；日志页有输出 |
-| 5 | OPNsense | 独立设计文档与实施 |
+| 5 | iStoreOS 上架 | `make-istore.sh` 产出合规 bundle；元数据 PR + ipk PR 提交到 `pending`；按维护者反馈处理；被拒则记录原因，自建 feed 不受影响 |
+| 6 | OPNsense | 独立设计文档与实施 |
 
 每个阶段结束都必须通过对应的测试层（§12.1）与设备验收（§12.4），未通过不进下一阶段。
 
@@ -880,6 +952,9 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 12. Pages 的 `cache-control: max-age=600` 在真实设备上不造成可感知的升级失败（必要时调整发布顺序或提示重试）
 13. `-X main.commit`、`-X main.date`、`-X main.builtBy` 注入后 `netbird version` 输出格式符合预期，且两次构建一致
 14. 自建管理面的 signal/relay 端点在目标网络可达；私有 CA 通过系统信任库或 `SSL_CERT_FILE` 生效
+15. iStore 维护者是否接受 netbird（官方源已有包）；不接受时退化为只上架 `luci-app-netbird`
+16. iStore 安装器在 `aarch64_generic` 设备上安装 `aarch64_cortex-a53` ipk 的架构处理（是否 force-arch）
+17. `openwrt-app-meta` 的 CI 对 logo、字段、版本的具体校验（提交前按其 CI 规则预检）
 
 ## 20. 附录：事实核查记录
 
@@ -915,6 +990,15 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | OPNsense 25.7 源 | `os-netbird-1.1`、`netbird-0.60.7` | `pkg.opnsense.org` 目录列表 |
 | OPNsense 26.1 源 | `os-netbird-1.3_3`、`netbird-0.72.2` | 同上 |
 | `GITHUB_TOKEN` 推送与工作流触发 | 推送产生的事件不会启动新的 workflow run | GitHub Actions 文档 |
+| istore-repo 内容 | 已编译的 ipk/apk，不是源码 | `istoreos/istore-repo` README |
+| iStore PR 目标分支 | `pending`；只允许新增 `bin/` 文件；禁止改 workflows | 其 README、`pr.yml` |
+| iStore ipk 目录 | `bin/packages/<arch>/<category>/`；arch = `aarch64_cortex-a53` / `x86_64` / `all` | 仓库树、README |
+| iStore aarch64 要求 | ipk 必须是 `aarch64_cortex-a53` | README |
+| iStore 官方源去重规则 | README 要求不提交官方源已有包；但 `tailscale` 为反例 | README、仓库树 |
+| iStore 元数据仓库 | `linkease/openwrt-app-meta`，`applications/app-meta-<name>/{Makefile,logo.png}` | 其 README |
+| iStore 元数据字段 | `PKG_VERSION`/`PKG_RELEASE`/`META_TITLE`/`META_DEPENDS`/`META_ARCH`/`META_LUCI_ENTRY`/`META_WEBSITE` 等 | 其 README 与样例 Makefile |
+| iStore PR 模板要求 | 勾选目标分支、文件已上传、元数据 PR 链接、源码仓库 | `.github/pull_request_template.md` |
+| iStore CI 校验 | 仅从 ipk 的 `control.tar.gz` 提取 `Package` 字段（其余靠索引生成） | 其 `pr.yml` |
 
 ## 21. 需要使用者提供的信息
 
@@ -928,6 +1012,7 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | usign 密钥口令策略 | 私钥是否加口令 | 待确认 | 不加口令（CI 无人值守），靠 Secret 与 environment 保护 |
 | 是否启用 GitHub Pages 自定义域名 | 影响 feed URL 稳定性 | 待确认 | 默认用 `github.io` 域名 |
 | 分支保护强度 | 是否允许 bot 直接提交 `versions/*.env` | 待确认 | 禁止强推与删除，允许 bot 直接提交（否则需改用 PR 自动合并） |
+| iStoreOS 上架 PR | 人工提交到 `istore-repo` 与 `openwrt-app-meta` | 阶段 5，使用 `xyonium` 账号 | 先元数据 PR，再 ipk PR（目标 `pending`） |
 
 用户名已确认（`gh auth status` 显示 xyonium）；`xyonium/netbird-pkgs` 仓库尚未创建，阶段 0 创建并启用 Pages。
 
