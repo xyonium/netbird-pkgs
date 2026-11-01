@@ -58,6 +58,7 @@ rm -rf "$dest"
 mkdir -p "$dest"
 cp -a "$source_dir/." "$dest/"
 
+make -C "$sdk" defconfig >/dev/null
 make -C "$sdk" package/luci-app-netbird/compile V=s
 
 ipk=$(find "$sdk/bin/packages" -name "luci-app-netbird_${version}-r${release}_all.ipk" | head -n 1)

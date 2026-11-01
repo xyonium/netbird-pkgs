@@ -101,48 +101,38 @@ jobs:
           rm -rf /tmp/luci-src luci-app-netbird
           mkdir -p /tmp/luci-src
           tar -xzf /tmp/luci.tar.gz -C /tmp/luci-src --strip-components=1
+          cp /tmp/luci-src/LICENSE /tmp/LICENSE
+          cat /tmp/luci-src/NOTICE \
+            packaging/luci-app-netbird/NOTICE.tailscale-bsd3.txt > /tmp/NOTICE
           mkdir -p luci-app-netbird
           cp -a /tmp/luci-src/luci-app-netbird/. luci-app-netbird/
-          cp /tmp/luci-src/LICENSE /tmp/luci-src/NOTICE /tmp/ 2>/dev/null || true
-      - name: Stage binary_source patch
+          cp /tmp/LICENSE /tmp/NOTICE luci-app-netbird/
+      - name: Install pinned OpenWrt SDK
         run: |
           set -eu
-          mkdir -p luci-app-netbird/patches
-          cp packaging/luci-app-netbird/patches/*.patch luci-app-netbird/patches/
-      - name: Build LuCI package
-        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434 # main
-        env:
-          ARCH: x86_64
-          PACKAGES: luci-app-netbird
-          FEED_DIR: ${{ github.workspace }}
-      - name: Collect and augment artifacts
+          . versions/luci-app-netbird.env
+          base="https://downloads.openwrt.org/releases/${LUCI_SDK_VERSION}/targets/x86/64"
+          tarball="openwrt-sdk-${LUCI_SDK_VERSION}-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+          curl -fsSL "${base}/${tarball}" -o /tmp/sdk.tar.zst
+          echo "${LUCI_SDK_SHA256}  /tmp/sdk.tar.zst" | sha256sum -c -
+          rm -rf "$RUNNER_TEMP/sdk"
+          mkdir -p "$RUNNER_TEMP/sdk"
+          tar --zstd -xf /tmp/sdk.tar.zst -C "$RUNNER_TEMP/sdk" --strip-components=1
+          echo "SDK_DIR=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
+      - name: Build LuCI ipk
         run: |
           set -eu
+          . versions/luci-app-netbird.env
+          . versions/netbird.env
           mkdir -p dist
-          ipk=$(find . -path ./.git -prune -o -name 'luci-app-netbird_*_all.ipk' -print | head -n 1)
-          if [ -z "$ipk" ]; then
-            echo "luci-app-netbird ipk missing; here is what the SDK left behind:" >&2
-            ls -la >&2
-            [ -d bin ] && find bin -maxdepth 4 -type d >&2 || echo "  no bin/ in the workspace" >&2
-            find . -path ./.git -prune -o -name '*.ipk' -print >&2 | head -20
-            if [ -d logs ]; then
-              find logs -type f >&2 | head -30
-              for f in $(find logs -type f -path '*luci-app-netbird*' | head -5); do
-                echo "=== $f ===" >&2
-                tail -80 "$f" >&2
-              done
-            else
-              echo "  no logs/ in the workspace" >&2
-            fi
-            exit 1
-          fi
-          cp "$ipk" dist/
-          scripts/augment-luci-ipk.sh --ipk "dist/$(basename "$ipk")" \
-            --license /tmp/LICENSE --notice /tmp/NOTICE \
-            --extra-notice packaging/luci-app-netbird/NOTICE.tailscale-bsd3.txt
-          find . -path ./.git -prune -o -name 'luci-i18n-netbird-zh-cn_*_all.ipk' \
+          SOURCE_DATE_EPOCH=$(scripts/source-date-epoch.sh --env-file versions/netbird.env)
+          export SOURCE_DATE_EPOCH
+          scripts/build-luci-ipk.sh --source luci-app-netbird --sdk "$SDK_DIR" \
+            --version "$LUCI_VERSION" --release "$LUCI_PKG_RELEASE" --outdir dist
+          find "$SDK_DIR/bin/packages" -name 'luci-i18n-netbird-zh-cn_*_all.ipk' \
             -exec cp {} dist/ \; 2>/dev/null || true
-          scripts/verify-luci-ipk.sh --ipk "dist/$(basename "$ipk")" \
+          scripts/verify-luci-ipk.sh \
+            --ipk "dist/luci-app-netbird_${LUCI_VERSION}-r${LUCI_PKG_RELEASE}_all.ipk" \
             --version-env versions/luci-app-netbird.env
           ( cd dist && sha256sum -- *.ipk > SHA256SUMS.all )
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

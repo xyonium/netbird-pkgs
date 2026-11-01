@@ -139,3 +139,20 @@ setup() {
   run bash -c "grep -rn 'gh api .* -o ' '$WF'"
   [ "$status" -eq 1 ]
 }
+
+@test "the LuCI build uses a pinned SDK release, not a floating container image" {
+  run grep -q 'openwrt/gh-action-sdk' "$WF/build-release.yml"
+  [ "$status" -eq 1 ]
+  run grep -q 'scripts/build-luci-ipk.sh' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'LUCI_SDK_SHA256' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "the pinned LuCI SDK is recorded with a verifiable checksum" {
+  env_file="$BATS_TEST_DIRNAME/../versions/luci-app-netbird.env"
+  run grep -qE '^LUCI_SDK_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$env_file"
+  [ "$status" -eq 0 ]
+  run grep -qE '^LUCI_SDK_SHA256=[0-9a-f]{64}$' "$env_file"
+  [ "$status" -eq 0 ]
+}

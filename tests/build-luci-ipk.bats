@@ -44,6 +44,8 @@ teardown() { rm -rf "$TMP"; }
   printf 'NOTICE\n' > "$SRC/NOTICE"
   mkdir -p "$TMP/sdk/bin/packages/x86_64/base"
   cat > "$TMP/sdk/Makefile" <<'MK'
+defconfig:
+	@:
 package/luci-app-netbird/compile:
 	mkdir -p bin/packages/x86_64/base work/control work/data/etc/config
 	printf 'Package: luci-app-netbird\nVersion: 0.1.0-r26\nArchitecture: all\nDescription: x\n' > work/control/control
@@ -68,6 +70,8 @@ MK
   printf 'NOTICE\n' > "$SRC/NOTICE"
   mkdir -p "$TMP/sdk/bin/packages/x86_64/base"
   cat > "$TMP/sdk/Makefile" <<'MK'
+defconfig:
+	@:
 package/luci-app-netbird/compile:
 	mkdir -p bin/packages/x86_64/base work/control work/data/etc/config work/data/htdocs/luci-static
 	printf 'Package: luci-app-netbird\nVersion: 0.1.0-r26\nArchitecture: all\nDescription: x\n' > work/control/control
