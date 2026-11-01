@@ -1,0 +1,44 @@
+name: upstream-watch
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Resolve latest release
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          gh api repos/netbirdio/netbird/releases/latest > /tmp/release.json
+          url=$(jq -r .tarball_url /tmp/release.json)
+          curl -fsSL "$url" -o /tmp/netbird-src.tar.gz
+          scripts/resolve-upstream.sh \
+            --repo netbirdio/netbird \
+            --fixture /tmp/release.json \
+            --tarball /tmp/netbird-src.tar.gz \
+            --env-file versions/netbird.env >> "$GITHUB_OUTPUT"
+      - name: Commit version bump
+        if: steps.resolve.outputs.CHANGED == '1'
+        env:
+          VERSION: ${{ steps.resolve.outputs.VERSION }}
+          COMMIT: ${{ steps.resolve.outputs.COMMIT }}
+          SHA256: ${{ steps.resolve.outputs.SHA256 }}
+        run: |
+          set -eu
+          printf 'NETBIRD_VERSION=%s\nNETBIRD_COMMIT=%s\nNETBIRD_SHA256=%s\nNETBIRD_PKG_RELEASE=1\n' \
+            "$VERSION" "$COMMIT" "$SHA256" > versions/netbird.env
+          git config user.name "netbird-pkgs bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add versions/netbird.env
+          git commit -m "chore(versions): netbird ${VERSION} (${COMMIT})"
+          git push

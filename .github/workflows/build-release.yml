@@ -1,0 +1,200 @@
+name: build-release
+
+on:
+  workflow_run:
+    workflows: [upstream-watch]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26.2"
+
+jobs:
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64_generic
+            goarch: arm64
+          - arch: x86_64
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: false
+      - name: Fetch source and checksum
+        run: |
+          set -eu
+          . versions/netbird.env
+          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/${NETBIRD_COMMIT}" -o /tmp/src.tar.gz
+          echo "${NETBIRD_SHA256}  /tmp/src.tar.gz" | sha256sum -c -
+          mkdir -p src
+          tar -xzf /tmp/src.tar.gz -C src --strip-components=1
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct versions/netbird.env)" >> "$GITHUB_ENV"
+      - name: Build client
+        run: |
+          set -eu
+          . versions/netbird.env
+          scripts/build-netbird.sh --arch "${{ matrix.arch }}" \
+            --version "$NETBIRD_VERSION" --commit "$NETBIRD_COMMIT" \
+            --source src --outdir dist
+      - name: Collect licenses
+        run: |
+          set -eu
+          scripts/collect-licenses.sh --mod-cache "$(go env GOMODCACHE)" \
+            --out dist/THIRD-PARTY-NOTICES.txt
+      - name: Assemble ipk
+        run: |
+          set -eu
+          . versions/netbird.env
+          scripts/build-netbird-ipk.sh --arch "${{ matrix.arch }}" \
+            --version "$NETBIRD_VERSION" --pkg-release "$NETBIRD_PKG_RELEASE" \
+            --binary dist/netbird --license src/LICENSE \
+            --notices dist/THIRD-PARTY-NOTICES.txt \
+            --source-date-epoch "$SOURCE_DATE_EPOCH" --outdir dist
+      - name: Verify ipk
+        run: |
+          set -eu
+          . versions/netbird.env
+          scripts/verify-ipk.sh --ipk "dist/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_${{ matrix.arch }}.ipk" \
+            --arch "${{ matrix.arch }}" --version "$NETBIRD_VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: netbird-${{ matrix.arch }}
+          path: dist/
+
+  build-luci:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Fetch LuCI source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          . versions/luci-app-netbird.env
+          gh api "repos/looong-cat/luci-app-netbird/tarball/${LUCI_COMMIT}" -o /tmp/luci.tar.gz
+          mkdir -p luci-app-netbird
+          tar -xzf /tmp/luci.tar.gz -C luci-app-netbird --strip-components=2
+      - name: Build LuCI package
+        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434 # main
+        env:
+          ARCH: x86_64
+          PACKAGES: luci-app-netbird
+          FEED_DIR: ${{ github.workspace }}
+      - name: Collect artifacts
+        run: |
+          set -eu
+          mkdir -p dist
+          find bin/packages -name 'luci-app-netbird_*_all.ipk' -exec cp {} dist/ \;
+          find bin/packages -name 'luci-i18n-netbird-zh-cn_*_all.ipk' -exec cp {} dist/ \;
+          sha256sum dist/*.ipk > dist/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: luci
+          path: dist/
+
+  repro:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: false
+      - name: Build twice and compare
+        run: |
+          set -eu
+          . versions/netbird.env
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct versions/netbird.env)" >> "$GITHUB_ENV"
+          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/${NETBIRD_COMMIT}" -o /tmp/src.tar.gz
+          mkdir -p src
+          tar -xzf /tmp/src.tar.gz -C src --strip-components=1
+          for i in 1 2; do
+            scripts/build-netbird.sh --arch x86_64 --version "$NETBIRD_VERSION" \
+              --commit "$NETBIRD_COMMIT" --source src --outdir "dist$i"
+            scripts/build-netbird-ipk.sh --arch x86_64 --version "$NETBIRD_VERSION" \
+              --pkg-release "$NETBIRD_PKG_RELEASE" --binary "dist$i/netbird" \
+              --license src/LICENSE --source-date-epoch "$SOURCE_DATE_EPOCH" --outdir "dist$i"
+          done
+          cmp "dist1/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_x86_64.ipk" \
+              "dist2/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_x86_64.ipk"
+
+  sign-publish:
+    if: github.event_name != 'schedule'
+    needs: [build, build-luci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Assemble signed feeds
+        env:
+          USIGN_SECRET_KEY_B64: ${{ secrets.USIGN_SECRET_KEY_B64 }}
+        run: |
+          set -eu
+          . versions/netbird.env
+          printf '%s' "$USIGN_SECRET_KEY_B64" | base64 -d > /tmp/key.sec
+          mkdir -p dist/pages
+          for arch in aarch64_generic x86_64; do
+            mkdir -p "dist/pages/$arch"
+            cp "artifacts/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_${arch}.ipk" "dist/pages/$arch/"
+            cp artifacts/luci-app-netbird_*_all.ipk artifacts/luci-i18n-netbird-zh-cn_*_all.ipk "dist/pages/$arch/" 2>/dev/null || true
+            scripts/make-feed.sh --dir "dist/pages/$arch" --arch "$arch" --retain 2
+            scripts/sign-feed.sh --dir "dist/pages/$arch" --key /tmp/key.sec --pub keys/netbird-pkgs.pub
+          done
+          scripts/make-istore.sh --ipk-dir artifacts \
+            --outdir dist/istore --version "$NETBIRD_VERSION" --pkg-release "$NETBIRD_PKG_RELEASE"
+          cp -a dist/pages "$GITHUB_WORKSPACE/pages"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          . versions/netbird.env
+          tag="v${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}"
+          gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS \
+            --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: "artifacts/*.ipk"
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: pages
+
+  deploy-pages:
+    needs: sign-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: github-pages
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
