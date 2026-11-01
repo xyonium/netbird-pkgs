@@ -111,6 +111,7 @@ Expected: `workflow`；`https://xyonium.github.io/netbird-pkgs/`（首次部署�
 - [ ] **Step 3: 生成 usign 密钥并保存 Secret**
 
 ```bash
+mkdir -p keys
 usign -G -s /tmp/netbird-pkgs.sec -p keys/netbird-pkgs.pub -c "netbird-pkgs feed signing key"
 gh api -X PUT repos/xyonium/netbird-pkgs/environments/release >/dev/null
 gh secret set USIGN_SECRET_KEY_B64 --env release --body "$(base64 -w0 /tmp/netbird-pkgs.sec)"
@@ -555,8 +556,9 @@ git commit -m "feat(istore): produce PR-ready ipk bundle and app metadata"
 - [ ] **Step 3: 实现工作流**
 
 `upstream-watch`：checkout → `resolve-upstream.sh` → 无变化退出 → 下载 tarball 校验 → 更新 env（新版本 `PKG_RELEASE=1`）→ bot commit。
-`build-release`：`build`（matrix；setup-go 1.26.2；下载校验；`build-netbird.sh`；collect-licenses；build-netbird-ipk；verify；upload artifact + SHA256SUMS）；`build-luci`（SDK + patch + build + verify）；`sign-publish`（下载 artifact + 校验 SHA256SUMS；取回上一版；make-feed；make-istore；sign；Release；attest；upload-pages-artifact）；`deploy-pages`（deploy-pages + 抽样校验）。
+`build-release`：`build`（matrix；setup-go 1.26.2；下载校验；`SOURCE_DATE_EPOCH=$(git log -1 --format=%ct versions/netbird.env)` 并在 job 内导出；`build-netbird.sh`；collect-licenses；build-netbird-ipk；verify；upload artifact + SHA256SUMS）；`build-luci`（SDK + patch + build + verify）；`sign-publish`（下载 artifact + 校验 SHA256SUMS；取回上一版；make-feed；make-istore；sign；Release；attest；upload-pages-artifact）；`deploy-pages`（deploy-pages + 抽样校验）。
 `dependabot.yml`：`github-actions` 周更。
+另加 `repro` job（`schedule` 夜间 + `workflow_dispatch`）：同一输入用 `build-netbird.sh` 与 `build-netbird-ipk.sh` 构建两次，比较 ipk sha256（§12.1 L6）。
 
 - [ ] **Step 4: 运行确认通过** → `bats tests/workflows.bats` PASS；`actionlint` 通过
 

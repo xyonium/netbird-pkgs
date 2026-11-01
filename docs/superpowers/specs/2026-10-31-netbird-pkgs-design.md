@@ -799,7 +799,7 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 |---|---|---|---|
 | `resolve-upstream.sh` | `--repo <owner/name>` `[--env-file versions/netbird.env]` | stdout：`VERSION=… COMMIT=… SHA256=… CHANGED=0\|1` | 只查询 GitHub API；无变化时 `CHANGED=0` 且不下载 |
 | `build-netbird.sh` | `--arch <aarch64_generic\|x86_64>` `--version <v>` `--commit <sha>` `--source <dir>` `--outdir <dir>` `[--dry-run]` | `<outdir>/netbird` | 校验 `go version` 为 `go1.26.2`；编译后执行 `netbird version` 自检；`--dry-run` 仅打印命令 |
-| `build-netbird-ipk.sh` | `--arch <aarch64_generic\|x86_64>` `--version` `--binary` `--outdir` `[--pkg-release N]` | `<outdir>/netbird_<ver>-r<N>_<arch>.ipk` + `.sha256` | 读取 `packaging/netbird/`；校验二进制可执行；固定 `SOURCE_DATE_EPOCH` |
+| `build-netbird-ipk.sh` | `--arch <aarch64_generic\|x86_64>` `--version` `--binary` `--outdir` `[--pkg-release N]` `[--source-date-epoch N]` | `<outdir>/netbird_<ver>-r<N>_<arch>.ipk` + `.sha256` | 读取 `packaging/netbird/`；校验二进制可执行；固定 `SOURCE_DATE_EPOCH` |
 | `collect-licenses.sh` | `--mod-cache <dir>` `--out <file>` | `THIRD-PARTY-NOTICES.txt` | 遍历模块缓存收集 LICENSE，按模块名排序；缺失许可的模块记入报告但不中断（人工复核） |
 | `build-luci-ipk.sh` | `--source <dir>` `--version <v>` `--release <r>` `--sdk <dir>` `--outdir <dir>` | `luci-app-netbird_<ver>_all.ipk` + `.sha256` | 调用 OpenWrt SDK，应用 §8.2 补丁，补装 LICENSE/NOTICE（§22） |
 | `make-feed.sh` | `--dir <feed>` `--arch <arch>` `[--retain N=2]` `[--ipk <path>]…` | 更新 `<feed>/Packages`、`Packages.gz` | 索引字段：`Package`、`Version`、`Depends`、`Architecture`、`Installed-Size`、`Filename`、`Size`、`SHA256sum`、`Section`、`Category`、`License`、`Description`；按 `Package`+`Version` 排序，`gzip -9n`；保留 N 个版本；拒绝索引中列出的文件缺失 |
