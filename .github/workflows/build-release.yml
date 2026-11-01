@@ -118,6 +118,9 @@ jobs:
           rm -rf "$RUNNER_TEMP/sdk"
           mkdir -p "$RUNNER_TEMP/sdk"
           tar --zstd -xf /tmp/sdk.tar.zst -C "$RUNNER_TEMP/sdk" --strip-components=1
+          # A bare SDK ships no feeds, and luci-app-netbird includes feeds/luci/luci.mk.
+          cd "$RUNNER_TEMP/sdk"
+          ./scripts/feeds update -a >/dev/null
           echo "SDK_DIR=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
       - name: Build LuCI ipk
         run: |
