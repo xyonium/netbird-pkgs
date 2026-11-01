@@ -156,3 +156,12 @@ setup() {
   run grep -qE '^LUCI_SDK_SHA256=[0-9a-f]{64}$' "$env_file"
   [ "$status" -eq 0 ]
 }
+
+@test "every workflow that signs a feed installs usign" {
+  for wf in "$WF"/*.yml; do
+    grep -q 'sign-feed.sh' "$wf" || continue
+    run grep -q 'scripts/install-test-deps.sh' "$wf"
+    [ "$status" -eq 0 ]
+    echo "checked $wf"
+  done
+}
