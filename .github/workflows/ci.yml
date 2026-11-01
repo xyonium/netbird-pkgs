@@ -19,8 +19,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bats shellcheck cmake build-essential
           git clone --depth 1 https://github.com/openwrt/usign /tmp/usign
-          make -C /tmp/usign >/dev/null
-          sudo install -m0755 /tmp/usign/usign /usr/local/bin/usign
+          cmake -S /tmp/usign -B /tmp/usign/build >/dev/null
+          make -C /tmp/usign/build >/dev/null
+          sudo install -m0755 /tmp/usign/build/usign /usr/local/bin/usign
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Lint
         run: |
