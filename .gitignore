@@ -1,0 +1,7 @@
+dist/
+.sdk/
+.agents/
+.superpowers/
+tools/
+*.ipk
+*.log

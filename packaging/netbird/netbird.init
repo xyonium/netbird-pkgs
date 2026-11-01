@@ -1,0 +1,45 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+USE_PROCD=1
+
+start_service() {
+	mkdir -p /var/lib/netbird
+	umask 077
+
+	procd_open_instance
+	procd_set_param command /usr/bin/netbird service run
+	procd_set_param env NB_CONFIG=/etc/netbird/config.json
+	procd_append_param env NB_STATE_DIR=/etc/netbird
+	procd_append_param env NB_DISABLE_SSH_CONFIG=1
+	procd_append_param env NB_DNS_STATE_FILE=/var/lib/netbird/state.json
+	append_env_from_file /etc/netbird.env
+	procd_set_param pidfile /var/run/netbird.pid
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+# Read KEY=VALUE lines from $1 without executing the file. Only whitelisted
+# keys are forwarded to procd; everything else is ignored.
+append_env_from_file() {
+	local file="$1" line key val
+
+	[ -f "$file" ] || return 0
+	while IFS= read -r line; do
+		case "$line" in
+			''|'#'*) continue ;;
+			*=*) ;;
+			*) continue ;;
+		esac
+		key=${line%%=*}
+		val=${line#*=}
+		case "$key" in
+			NB_LOG_FILE|NB_LOG_LEVEL|SSL_CERT_FILE) ;;
+			*) continue ;;
+		esac
+		val=${val%\"}
+		val=${val#\"}
+		procd_append_param env "$key=$val"
+	done < "$file"
+}
