@@ -41,7 +41,7 @@ i18n=$(find "$ipk_dir" -maxdepth 1 -name 'luci-i18n-netbird-zh-cn_*_all.ipk' | s
 script_dir=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(dirname "$script_dir")
 meta_src="$repo_root/packaging/istore/app-meta-netbird"
-[ -f "$meta_src/Makefile" ] || { echo "missing metadata template" >&2; exit 1; }
+[ -f "$meta_src/Makefile.in" ] || { echo "missing metadata template" >&2; exit 1; }
 
 epoch=${SOURCE_DATE_EPOCH:-0}
 tar_opts="--sort=name --mtime=@$epoch --owner=0 --group=0 --numeric-owner"
@@ -68,7 +68,7 @@ cp "$luci" "$outdir/bin/packages/all/nas_luci/"
 [ -z "$i18n" ] || cp "$i18n" "$outdir/bin/packages/all/nas_luci/"
 
 sed -e "s|@VERSION@|$version|g" -e "s|@RELEASE@|$release|g" \
-	"$meta_src/Makefile" > "$outdir/applications/app-meta-netbird/Makefile"
+	"$meta_src/Makefile.in" > "$outdir/applications/app-meta-netbird/Makefile"
 cp "$meta_src/logo.png" "$outdir/applications/app-meta-netbird/logo.png"
 
 # Validate the repacked Architecture against its directory.

@@ -119,13 +119,20 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          ipk=$(find bin/packages -name 'luci-app-netbird_*_all.ipk' | head -n 1)
-          [ -n "$ipk" ] || { echo "luci-app-netbird ipk missing" >&2; exit 1; }
+          ipk=$(find . -path ./.git -prune -o -name 'luci-app-netbird_*_all.ipk' -print | head -n 1)
+          if [ -z "$ipk" ]; then
+            echo "luci-app-netbird ipk missing; here is what the SDK left behind:" >&2
+            ls -la >&2
+            [ -d bin ] && find bin -maxdepth 4 -type d >&2 || echo "  no bin/ in the workspace" >&2
+            find . -path ./.git -prune -o -name '*.ipk' -print >&2 | head -20
+            exit 1
+          fi
           cp "$ipk" dist/
           scripts/augment-luci-ipk.sh --ipk "dist/$(basename "$ipk")" \
             --license /tmp/LICENSE --notice /tmp/NOTICE \
             --extra-notice packaging/luci-app-netbird/NOTICE.tailscale-bsd3.txt
-          find bin/packages -name 'luci-i18n-netbird-zh-cn_*_all.ipk' -exec cp {} dist/ \;
+          find . -path ./.git -prune -o -name 'luci-i18n-netbird-zh-cn_*_all.ipk' \
+            -exec cp {} dist/ \; 2>/dev/null || true
           scripts/verify-luci-ipk.sh --ipk "dist/$(basename "$ipk")" \
             --version-env versions/luci-app-netbird.env
           ( cd dist && sha256sum -- *.ipk > SHA256SUMS.all )

@@ -54,3 +54,11 @@ teardown() { rm -rf "$TMP"; }
   run "$SCRIPT" --ipk-dir "$IN" --outdir "$OUT" --version 0.82.0 --pkg-release 1
   [ "$status" -eq 1 ]
 }
+
+@test "keeps the metadata template under a name an OpenWrt feed scan ignores" {
+  repo="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  # scripts/feeds walks every Makefile in a feed; a template with @PLACEHOLDER@
+  # fields and a missing include makes the whole feed index fail to build.
+  [ ! -f "$repo/packaging/istore/app-meta-netbird/Makefile" ]
+  [ -f "$repo/packaging/istore/app-meta-netbird/Makefile.in" ]
+}
