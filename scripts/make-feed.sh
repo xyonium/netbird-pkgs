@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Build a deterministic opkg Packages index from ipk files.
 set -eu
 

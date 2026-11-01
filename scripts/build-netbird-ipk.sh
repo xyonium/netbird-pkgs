@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Assemble a netbird ipk without the OpenWrt SDK.
 set -eu
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Build luci-app-netbird from a pinned source tree with the binary_source patch.
 set -eu
 

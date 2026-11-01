@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Configure an OpenWrt device to use the netbird-pkgs feed.
 set -eu
 

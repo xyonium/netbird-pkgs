@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Build the netbird client with the pinned toolchain and flags.
 set -eu
 

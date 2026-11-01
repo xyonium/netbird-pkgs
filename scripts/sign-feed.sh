@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Sign or verify the opkg Packages index with usign.
 set -eu
 

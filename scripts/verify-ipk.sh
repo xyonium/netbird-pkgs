@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Verify an assembled netbird ipk against the packaging contract.
 set -eu
 

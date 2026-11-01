@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Collect third-party license texts from the Go module cache.
 set -eu
 

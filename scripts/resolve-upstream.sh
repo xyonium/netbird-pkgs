@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1007,SC2013,SC2015
 # Resolve the latest netbird release without mutating the repo.
 set -eu
 
