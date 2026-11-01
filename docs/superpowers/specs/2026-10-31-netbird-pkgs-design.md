@@ -159,6 +159,7 @@ netbird-pkgs/
 │       └── logo.png
 ├── scripts/
 │   ├── resolve-upstream.sh
+│   ├── build-netbird.sh
 │   ├── build-netbird-ipk.sh
 │   ├── build-luci-ipk.sh
 │   ├── make-istore.sh
@@ -349,6 +350,8 @@ go build -trimpath -buildvcs=false -buildmode=exe \
 - 构建不执行上游测试套件或任何上游脚本，只编译（避免运行不受信代码）。
 - 构建后立即执行 `netbird version`，输出必须等于 `<ver>`，否则失败；arm64 产物在 CI 中经 qemu-user 执行（§12.1 L3）。
 - `SOURCE_DATE_EPOCH` 固定为 `versions/netbird.env` 对应提交的时间，供可复现构建使用（§7.5）。
+
+以上编译命令封装在 `scripts/build-netbird.sh`（校验 `go version`、注入 `SOURCE_DATE_EPOCH`、编译后执行 `netbird version` 自检）。
 
 ipk 组装不依赖 OpenWrt SDK：ipk 是包含 `debian-binary`、`control.tar.gz` 与 `data.tar.gz` 的 gzip 压缩 tar 归档，由 `scripts/build-netbird-ipk.sh` 用标准 `tar`/`gzip` 生成。
 
@@ -591,7 +594,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 1. checkout 默认分支
 2. 下载源码 tarball，校验 sha256 与 `versions/netbird.env` 一致
 3. `actions/setup-go`（钉 SHA，版本 `1.26.2`）
-4. `go build`（参数见 §7.4）
+4. `scripts/build-netbird.sh`（参数与校验见 §7.4）
 5. `scripts/collect-licenses.sh` 生成第三方许可汇总
 6. `scripts/build-netbird-ipk.sh` 组装 ipk
 7. `scripts/verify-ipk.sh` 自检（§12.3）
@@ -716,6 +719,7 @@ v1 假设 `upstream-watch` 更新 `versions/netbird.env` 后由 `push` 触发 `b
 
 | 测试文件 | 用例要点 |
 |---|---|
+| `build-netbird.bats` | `--dry-run` 输出的 go 命令包含 `-trimpath`、`-tags load_wgnt_from_rsrc`、`CGO_ENABLED=0`、`GOTOOLCHAIN=local` 与全部 `-X` 注入；版本/commit 与 env 一致；`go version` 不符时退出 1 |
 | `build-netbird-ipk.bats` | `control` 字段完整且版本/架构正确；不生成 `conffiles`；`/usr/bin/netbird` 权限 0755；缺失二进制时非零退出；重复执行产物 sha256 一致 |
 | `make-feed.bats` | 索引按 `Package`+`Version` 稳定排序；`Filename` 为相对路径；`Size`/`SHA256` 与实际文件一致；只保留指定版本数；空目录行为 |
 | `sign-feed.bats` | 签名后可验签；篡改 `Packages` 后验签失败；缺私钥时非零退出 |
@@ -794,9 +798,10 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 | 脚本 | 参数 | 产物 / 输出 | 说明 |
 |---|---|---|---|
 | `resolve-upstream.sh` | `--repo <owner/name>` `[--env-file versions/netbird.env]` | stdout：`VERSION=… COMMIT=… SHA256=… CHANGED=0\|1` | 只查询 GitHub API；无变化时 `CHANGED=0` 且不下载 |
+| `build-netbird.sh` | `--arch <aarch64_generic\|x86_64>` `--version <v>` `--commit <sha>` `--source <dir>` `--outdir <dir>` `[--dry-run]` | `<outdir>/netbird` | 校验 `go version` 为 `go1.26.2`；编译后执行 `netbird version` 自检；`--dry-run` 仅打印命令 |
 | `build-netbird-ipk.sh` | `--arch <aarch64_generic\|x86_64>` `--version` `--binary` `--outdir` `[--pkg-release N]` | `<outdir>/netbird_<ver>-r<N>_<arch>.ipk` + `.sha256` | 读取 `packaging/netbird/`；校验二进制可执行；固定 `SOURCE_DATE_EPOCH` |
 | `collect-licenses.sh` | `--mod-cache <dir>` `--out <file>` | `THIRD-PARTY-NOTICES.txt` | 遍历模块缓存收集 LICENSE，按模块名排序；缺失许可的模块记入报告但不中断（人工复核） |
-| `build-luci-ipk.sh` | `--version` `--sdk <dir>` `--outdir` | `luci-app-netbird_<ver>_all.ipk` + `.sha256` | 调用 OpenWrt SDK，应用 §8.2 补丁，补装 LICENSE/NOTICE（§22） |
+| `build-luci-ipk.sh` | `--source <dir>` `--version <v>` `--release <r>` `--sdk <dir>` `--outdir <dir>` | `luci-app-netbird_<ver>_all.ipk` + `.sha256` | 调用 OpenWrt SDK，应用 §8.2 补丁，补装 LICENSE/NOTICE（§22） |
 | `make-feed.sh` | `--dir <feed>` `--arch <arch>` `[--retain N=2]` `[--ipk <path>]…` | 更新 `<feed>/Packages`、`Packages.gz` | 索引字段：`Package`、`Version`、`Depends`、`Architecture`、`Installed-Size`、`Filename`、`Size`、`SHA256sum`、`Section`、`Category`、`License`、`Description`；按 `Package`+`Version` 排序，`gzip -9n`；保留 N 个版本；拒绝索引中列出的文件缺失 |
 | `sign-feed.sh` | `--dir <feed>` `--key <secret-key>` 或 `--verify <pub-key>` | `Packages.sig`；`--verify` 时仅校验 | 签名后立刻自验签，失败即非零退出 |
 | `verify-ipk.sh` | `--ipk <path>` `--arch <arch>` | stdout 检查清单 | 对应 §12.3；失败项逐条列出 |
