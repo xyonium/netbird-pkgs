@@ -133,3 +133,9 @@ setup() {
     echo "checked $wf"
   done
 }
+
+@test "never passes gh api an output flag it does not have" {
+  # gh api writes the body to stdout; it has no -o/--output flag.
+  run bash -c "grep -rn 'gh api .* -o ' '$WF'"
+  [ "$status" -eq 1 ]
+}

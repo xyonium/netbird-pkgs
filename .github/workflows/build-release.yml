@@ -97,7 +97,7 @@ jobs:
         run: |
           set -eu
           . versions/luci-app-netbird.env
-          gh api "repos/looong-cat/luci-app-netbird/tarball/${LUCI_COMMIT}" -o /tmp/luci.tar.gz
+          gh api "repos/looong-cat/luci-app-netbird/tarball/${LUCI_COMMIT}" > /tmp/luci.tar.gz
           rm -rf /tmp/luci-src luci-app-netbird
           mkdir -p /tmp/luci-src
           tar -xzf /tmp/luci.tar.gz -C /tmp/luci-src --strip-components=1
