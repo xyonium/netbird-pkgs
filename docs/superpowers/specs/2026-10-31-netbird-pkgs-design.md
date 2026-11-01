@@ -801,7 +801,7 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 | `sign-feed.sh` | `--dir <feed>` `--key <secret-key>` 或 `--verify <pub-key>` | `Packages.sig`；`--verify` 时仅校验 | 签名后立刻自验签，失败即非零退出 |
 | `verify-ipk.sh` | `--ipk <path>` `--arch <arch>` | stdout 检查清单 | 对应 §12.3；失败项逐条列出 |
 | `make-istore.sh` | `--ipk-dir <dir>` `--outdir <dist/istore>` `[--version]` `[--pkg-release]` | iStore bundle（`bin/packages/...` + `applications/app-meta-netbird/`） | 重打包 aarch64 → `aarch64_cortex-a53`；复制 x86_64 / `all` 包；渲染元数据；校验目录与命名（§16） |
-| `install-feed.sh` | `--feed-url` `[--key-url]` `[--arch auto]` `[--yes]` | 设备端配置变更 | root 运行；优先用 `opkg-key add` 导入公钥（回退 `usign -F` + 复制到 `/etc/opkg/keys/<16 位指纹>`）；幂等写入 `/etc/opkg/customfeeds.conf`；`--arch auto` 由 `opkg print-architecture` 取最高优先级架构推断 |
+| `install-feed.sh` | `--feed-url` `[--key-url]` `[--arch auto]` `[--root <dir>]` `[--yes]` | 设备端配置变更 | root 运行；`--root` 仅供测试/容器重定向（默认 `/`）；优先用 `opkg-key add` 导入公钥（回退 `usign -F` + 复制到 `/etc/opkg/keys/<16 位指纹>`）；幂等写入 `/etc/opkg/customfeeds.conf`；`--arch auto` 由 `opkg print-architecture` 取最高优先级架构推断 |
 
 补充约束：
 
