@@ -23,6 +23,7 @@ jobs:
           make -C /tmp/usign/build >/dev/null
           sudo install -m0755 /tmp/usign/build/usign /usr/local/bin/usign
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Lint
         run: |
           set -eu
