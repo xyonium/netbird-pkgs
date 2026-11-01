@@ -28,6 +28,13 @@ jobs:
           else
             echo "CHANGED=1" >> "$GITHUB_OUTPUT"
           fi
+      - name: Install test tools
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+      - name: Validate
+        run: make lint test
       - name: Open PR
         if: steps.resolve.outputs.CHANGED == '1'
         env:
@@ -36,8 +43,13 @@ jobs:
         run: |
           set -eu
           branch="luci-update-${COMMIT}"
+          if gh pr list --head "$branch" --json number --jq 'length' | grep -q '^[1-9]'; then
+            echo "PR already open for $branch"; exit 0
+          fi
           git checkout -b "$branch"
           sed -i "s|^LUCI_COMMIT=.*|LUCI_COMMIT=${COMMIT}|" versions/luci-app-netbird.env
+          release=$(sed -n 's/^LUCI_PKG_RELEASE=//p' versions/luci-app-netbird.env | head -n 1)
+          sed -i "s|^LUCI_PKG_RELEASE=.*|LUCI_PKG_RELEASE=$((release + 1))|" versions/luci-app-netbird.env
           git config user.name "netbird-pkgs bot"
           git config user.email "bot@users.noreply.github.com"
           git add versions/luci-app-netbird.env

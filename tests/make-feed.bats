@@ -40,6 +40,13 @@ teardown() { rm -rf "$TMP"; }
   [ "$status" -eq 1 ]
 }
 
+@test "keeps multi-line Description blocks from the control file" {
+  run "$SCRIPT" --dir "$FEED" --arch aarch64_generic --retain 2
+  [ "$status" -eq 0 ]
+  run grep -A1 '^Description:' "$FEED/Packages"
+  [[ "$output" == *"Package2:"* || "$output" == *"Description: fixture"* ]]
+}
+
 @test "removes a stale Packages.sig when rebuilding the index" {
   printf 'stale' > "$FEED/Packages.sig"
   run "$SCRIPT" --dir "$FEED" --arch aarch64_generic --retain 2

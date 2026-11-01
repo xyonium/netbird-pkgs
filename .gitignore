@@ -5,3 +5,4 @@ dist/
 tools/
 *.ipk
 *.log
+out/

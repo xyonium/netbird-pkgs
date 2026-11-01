@@ -37,6 +37,15 @@ teardown() {
   [ "$(wc -l < "$PARAMS")" -eq 1 ]
 }
 
+@test "parses a final line without a trailing newline" {
+  source "$INIT"
+  procd_append_param() { echo "$*" >> "$PARAMS"; }
+  printf 'NB_LOG_FILE=syslog\nSSL_CERT_FILE=/etc/ssl/certs/ca.pem' > "$TMP/env"
+  append_env_from_file "$TMP/env"
+  run cat "$PARAMS"
+  [[ "$output" == *"SSL_CERT_FILE=/etc/ssl/certs/ca.pem"* ]]
+}
+
 @test "never sources /etc/netbird.env" {
   run grep -E '(^|[[:space:]])(\.|source)[[:space:]]+/etc/netbird\.env' "$INIT"
   [ "$status" -eq 1 ]

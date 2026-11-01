@@ -96,8 +96,12 @@ jobs:
           set -eu
           . versions/luci-app-netbird.env
           gh api "repos/looong-cat/luci-app-netbird/tarball/${LUCI_COMMIT}" -o /tmp/luci.tar.gz
+          rm -rf /tmp/luci-src luci-app-netbird
+          mkdir -p /tmp/luci-src
+          tar -xzf /tmp/luci.tar.gz -C /tmp/luci-src --strip-components=1
           mkdir -p luci-app-netbird
-          tar -xzf /tmp/luci.tar.gz -C luci-app-netbird --strip-components=1
+          cp -a /tmp/luci-src/luci-app-netbird/. luci-app-netbird/
+          cp /tmp/luci-src/LICENSE /tmp/luci-src/NOTICE /tmp/ 2>/dev/null || true
       - name: Stage binary_source patch
         run: |
           set -eu
@@ -109,15 +113,24 @@ jobs:
           ARCH: x86_64
           PACKAGES: luci-app-netbird
           FEED_DIR: ${{ github.workspace }}
-      - name: Collect artifacts
+      - name: Collect and augment artifacts
         run: |
           set -eu
           mkdir -p dist
-          find bin/packages -name 'luci-app-netbird_*_all.ipk' -exec cp {} dist/ \;
+          ipk=$(find bin/packages -name 'luci-app-netbird_*_all.ipk' | head -n 1)
+          [ -n "$ipk" ] || { echo "luci-app-netbird ipk missing" >&2; exit 1; }
+          cp "$ipk" dist/
+          scripts/augment-luci-ipk.sh --ipk "dist/$(basename "$ipk")" \
+            --license /tmp/LICENSE --notice /tmp/NOTICE \
+            --extra-notice packaging/luci-app-netbird/NOTICE.tailscale-bsd3.txt
           find bin/packages -name 'luci-i18n-netbird-zh-cn_*_all.ipk' -exec cp {} dist/ \;
+          tar -xOf "dist/$(basename "$ipk")" ./data.tar.gz | tar -xzOf - ./etc/config/netbird_bin | grep -q "option binary_source 'opkg'"
+          tar -xOf "dist/$(basename "$ipk")" ./data.tar.gz | tar -tzf - | grep -q 'doc/luci-app-netbird/LICENSE'
+          control=$(tar -xOf "dist/$(basename "$ipk")" ./control.tar.gz | tar -xzOf - ./control)
+          printf '%s\n' "$control" | grep -q '^Package: luci-app-netbird$'
+          printf '%s\n' "$control" | grep -q '^Architecture: all$'
+          printf '%s\n' "$control" | grep -q "^Version: ${LUCI_VERSION}-r${LUCI_PKG_RELEASE}\$"
           ( cd dist && sha256sum -- *.ipk > SHA256SUMS.all )
-          ipk=$(find dist -name 'luci-app-netbird_*_all.ipk' | head -n 1)
-          tar -xOf "$ipk" ./data.tar.gz | tar -xzOf - ./etc/config/netbird_bin | grep -q "option binary_source 'opkg'"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: luci
@@ -222,14 +235,17 @@ jobs:
         run: |
           set -eu
           . versions/netbird.env
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct versions/netbird.env)
+          export SOURCE_DATE_EPOCH
           tag="v${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}"
-          tar -czf dist/istore-bundle.tar.gz -C dist istore
+          tar --sort=name --mtime=@"${SOURCE_DATE_EPOCH:-0}" --owner=0 --group=0 --numeric-owner \
+            -cf - -C dist istore | gzip -9n > dist/istore-bundle.tar.gz
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz --clobber
-          else
-            gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz \
-              --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
+            echo "release $tag already exists; leaving immutable assets untouched"
+            exit 0
           fi
+          gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz \
+            --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "artifacts/*.ipk"

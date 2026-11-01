@@ -93,7 +93,7 @@ while IFS='|' read -r pkg uv release file; do
 			/^Architecture: /{arch=$0}
 			/^Installed-Size: /{isize=$0}
 			/^License: /{lic=$0}
-			/^Description: /{desc=$0; next}
+			/^Description: /{desc=$0; indesc=1; next}
 			indesc && /^ /{desc=desc "\n" $0; next}
 			{indesc=0}
 			END{

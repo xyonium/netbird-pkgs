@@ -31,7 +31,7 @@ tmp="$out.tmp"
 : > "$tmp"
 rm -f "$tmp.missing"
 
-find "$cache" -mindepth 1 -type d -name '*@*' | LC_ALL=C sort | while IFS= read -r dir; do
+find "$cache" -mindepth 1 -type d -name '*@*' ! -path '*/cache/download/*' | LC_ALL=C sort | while IFS= read -r dir; do
 	lic=""
 	for name in LICENSE LICENSE.md LICENSE.txt COPYING COPYING.md NOTICE; do
 		if [ -f "$dir/$name" ]; then

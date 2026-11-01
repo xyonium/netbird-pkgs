@@ -80,7 +80,7 @@ if [ -n "$notices" ]; then
 	chmod 0644 "$work/data/usr/share/licenses/netbird/THIRD-PARTY-NOTICES.txt"
 fi
 
-installed_size=$(du -sk "$work/data" | awk '{print $1}')
+installed_size=$(du --apparent-size -sk "$work/data" | awk '{print $1}')
 sed \
 	-e "s|@VERSION@|$version|g" \
 	-e "s|@PKG_RELEASE@|$pkg_release|g" \
