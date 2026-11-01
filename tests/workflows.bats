@@ -124,3 +124,12 @@ setup() {
   run bash -c "grep 'gh release download' '$WF/build-release.yml' | grep -c '|| true'"
   [ "$status" -eq 1 ]
 }
+
+@test "every workflow that runs the test suite checks out full history" {
+  for wf in "$WF"/*.yml; do
+    grep -qE 'make (lint )?test' "$wf" || continue
+    run grep -q 'fetch-depth: 0' "$wf"
+    [ "$status" -eq 0 ]
+    echo "checked $wf"
+  done
+}

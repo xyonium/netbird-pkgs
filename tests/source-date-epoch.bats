@@ -9,6 +9,10 @@ setup() {
 teardown() { rm -rf "$TMP"; }
 
 @test "prints the commit time of the last commit touching the version env" {
+  # The script refuses shallow clones by design, so this can only run where
+  # history is present. CI checks out with fetch-depth: 0.
+  [ "$(git -C "$REPO" rev-parse --is-shallow-repository)" = "false" ] \
+    || skip "shallow clone: no history to derive the epoch from"
   run bash -c "cd '$REPO' && '$SCRIPT' --env-file versions/netbird.env"
   [ "$status" -eq 0 ]
   want=$(git -C "$REPO" log -1 --format=%ct -- versions/netbird.env)
