@@ -1,0 +1,14 @@
+Package: netbird
+Version: @VERSION@-r@PKG_RELEASE@
+Depends: kmod-wireguard, ca-bundle
+Section: net
+Category: Network
+Architecture: @ARCH@
+Installed-Size: @INSTALLED_SIZE@
+Maintainer: xyonium
+License: BSD-3-Clause
+SourceDateEpoch: @SOURCE_DATE_EPOCH@
+Description: NetBird client for OpenWrt
+ NetBird is a WireGuard-based mesh VPN. This package ships the
+ statically linked client, a procd init script and license notices.
+ Built by netbird-pkgs from the pinned upstream source.
