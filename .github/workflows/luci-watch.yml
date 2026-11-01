@@ -1,0 +1,48 @@
+name: luci-watch
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Resolve upstream commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          sha=$(gh api repos/looong-cat/luci-app-netbird/commits/main --jq .sha)
+          current=$(sed -n 's/^LUCI_COMMIT=//p' versions/luci-app-netbird.env | head -n 1)
+          echo "COMMIT=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$sha" = "$current" ]; then
+            echo "CHANGED=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "CHANGED=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open PR
+        if: steps.resolve.outputs.CHANGED == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT: ${{ steps.resolve.outputs.COMMIT }}
+        run: |
+          set -eu
+          branch="luci-update-${COMMIT}"
+          git checkout -b "$branch"
+          sed -i "s|^LUCI_COMMIT=.*|LUCI_COMMIT=${COMMIT}|" versions/luci-app-netbird.env
+          git config user.name "netbird-pkgs bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add versions/luci-app-netbird.env
+          git commit -m "chore(luci): update luci-app-netbird to ${COMMIT}"
+          git push origin "$branch"
+          gh pr create --title "chore(luci): update to ${COMMIT}" \
+            --body "Upstream luci-app-netbird commit ${COMMIT}. Requires manual review and merge." \
+            --base main --head "$branch"

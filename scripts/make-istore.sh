@@ -34,8 +34,8 @@ src_x86="$ipk_dir/netbird_${version}-r${release}_x86_64.ipk"
 [ -f "$src_a53" ] || { echo "missing $src_a53" >&2; exit 1; }
 [ -f "$src_x86" ] || { echo "missing $src_x86" >&2; exit 1; }
 
-luci=$(find "$ipk_dir" -maxdepth 1 -name 'luci-app-netbird_*_all.ipk' | head -n 1)
-i18n=$(find "$ipk_dir" -maxdepth 1 -name 'luci-i18n-netbird-zh-cn_*_all.ipk' | head -n 1)
+luci=$(find "$ipk_dir" -maxdepth 1 -name 'luci-app-netbird_*_all.ipk' | sort -V | tail -n 1)
+i18n=$(find "$ipk_dir" -maxdepth 1 -name 'luci-i18n-netbird-zh-cn_*_all.ipk' | sort -V | tail -n 1)
 [ -n "$luci" ] || { echo "missing luci-app-netbird ipk" >&2; exit 1; }
 
 script_dir=$(cd "$(dirname "$0")" && pwd)

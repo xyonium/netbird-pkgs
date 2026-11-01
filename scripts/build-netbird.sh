@@ -61,12 +61,14 @@ cmd="CGO_ENABLED=0 GOOS=linux GOARCH=$goarch GOTOOLCHAIN=local GOFLAGS=-mod=read
 $GO build -trimpath -buildvcs=false -buildmode=exe -tags load_wgnt_from_rsrc \
 -ldflags \"$ldflags\" -o $outdir/netbird ./client"
 
+mkdir -p "$outdir"
+outdir=$(cd "$outdir" && pwd)
+
 if [ "$dry_run" -eq 1 ]; then
 	printf '%s\n' "$cmd"
 	exit 0
 fi
 
-mkdir -p "$outdir"
 (
 	cd "$source"
 	CGO_ENABLED=0 GOOS=linux GOARCH=$goarch GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
@@ -75,9 +77,14 @@ mkdir -p "$outdir"
 		-o "$outdir/netbird" ./client
 )
 
-built=$("$outdir/netbird" version 2>&1 | head -n 1)
-if [ "$built" != "$version" ]; then
-	echo "built binary reports '$built', expected '$version'" >&2
-	exit 1
+host=$(uname -m)
+if [ "$arch" = x86_64 ] && [ "$host" = x86_64 ]; then
+	built=$("$outdir/netbird" version 2>&1 | head -n 1)
+	if [ "$built" != "$version" ]; then
+		echo "built binary reports '$built', expected '$version'" >&2
+		exit 1
+	fi
+else
+	echo "cross-arch build: skipping native version self-check ($arch on $host)"
 fi
 echo "built $outdir/netbird ($version)"

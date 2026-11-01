@@ -74,6 +74,12 @@ if [ "$skip" -eq 0 ]; then
 	if [ -f "$work/root/usr/bin/netbird" ]; then
 		file "$work/root/usr/bin/netbird" | grep -q 'statically linked' \
 			|| note_fail "binary is not statically linked"
+		case "$arch" in
+			x86_64) file "$work/root/usr/bin/netbird" | grep -Eq 'x86-64|X86-64' \
+				|| note_fail "binary is not x86-64" ;;
+			aarch64_generic) file "$work/root/usr/bin/netbird" | grep -q 'ARM aarch64\|AArch64' \
+				|| note_fail "binary is not aarch64" ;;
+		esac
 		if command -v readelf >/dev/null 2>&1; then
 			if readelf -l "$work/root/usr/bin/netbird" 2>/dev/null | grep -q 'INTERP'; then
 				note_fail "binary has an INTERP segment"

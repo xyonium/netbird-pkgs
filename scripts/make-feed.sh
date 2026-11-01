@@ -39,6 +39,7 @@ for f in $ipks; do
 		|| cp "$f" "$dir/"
 done
 
+rm -f "$dir/Packages.sig"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 
@@ -57,7 +58,8 @@ for ipk in "$dir"/*.ipk; do
 	parm=$(printf '%s\n' "$control" | sed -n 's/^Architecture: //p' | head -n 1)
 	[ -n "$pkg" ] && [ -n "$ver" ] || { echo "invalid ipk: $ipk" >&2; exit 1; }
 	if [ "$parm" != "$arch" ] && [ "$parm" != all ]; then
-		continue
+		echo "unexpected architecture '$parm' in $ipk (feed $arch)" >&2
+		exit 1
 	fi
 	upstream=${ver%-r*}
 	release=${ver##*-r}

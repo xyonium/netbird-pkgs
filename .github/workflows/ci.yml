@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install tools
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck cmake build-essential
+          git clone --depth 1 https://github.com/openwrt/usign /tmp/usign
+          make -C /tmp/usign >/dev/null
+          sudo install -m0755 /tmp/usign/usign /usr/local/bin/usign
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint
+        run: |
+          set -eu
+          make lint
+          actionlint
+      - name: Test
+        run: make test

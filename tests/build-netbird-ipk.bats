@@ -81,6 +81,7 @@ build() {
   run build aarch64_generic
   [ "$status" -eq 0 ]
   cp "$TMP/out/netbird_0.82.0-r1_aarch64_generic.ipk" "$TMP/first.ipk"
+  touch -d @2001010101 "$TMP/netbird" "$TMP/LICENSE" "$TMP/NOTICES"
   run build aarch64_generic
   [ "$status" -eq 0 ]
   cmp "$TMP/first.ipk" "$TMP/out/netbird_0.82.0-r1_aarch64_generic.ipk"

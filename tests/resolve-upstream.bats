@@ -7,7 +7,8 @@ setup() {
 { "tag_name": "v0.82.0", "target_commitish": "deadbeefcafe" }
 JSON
   printf 'tarball-bytes' > "$TMP/src.tar.gz"
-  printf 'NETBIRD_VERSION=0.82.0\nNETBIRD_COMMIT=x\nNETBIRD_SHA256=y\nNETBIRD_PKG_RELEASE=2\n' > "$TMP/same.env"
+  printf 'NETBIRD_VERSION=0.82.0\nNETBIRD_COMMIT=x\nNETBIRD_SHA256=%s\nNETBIRD_PKG_RELEASE=2\n' \
+    "$(sha256sum "$TMP/src.tar.gz" | awk '{print $1}')" > "$TMP/same.env"
   printf 'NETBIRD_VERSION=0.81.4\nNETBIRD_COMMIT=x\nNETBIRD_SHA256=y\nNETBIRD_PKG_RELEASE=1\n' > "$TMP/old.env"
 }
 
@@ -28,6 +29,13 @@ teardown() { rm -rf "$TMP"; }
     --tarball "$TMP/src.tar.gz" --env-file "$TMP/same.env"
   [ "$status" -eq 0 ]
   [[ "$output" == *"CHANGED=0"* ]]
+}
+
+@test "uses an explicit commit over target_commitish" {
+  run "$SCRIPT" --repo netbirdio/netbird --fixture "$TMP/release.json" \
+    --tarball "$TMP/src.tar.gz" --env-file "$TMP/old.env" --commit 3c00a978
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"COMMIT=3c00a978"* ]]
 }
 
 @test "rejects a missing tarball or fixture" {

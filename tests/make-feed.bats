@@ -34,6 +34,19 @@ teardown() { rm -rf "$TMP"; }
   [ "$status" -eq 1 ]
 }
 
+@test "fails when an ipk has an unexpected architecture for the feed" {
+  make_fixture_ipk "$FEED" netbird 0.82.0-r1 aarch64_cortex-a53
+  run "$SCRIPT" --dir "$FEED" --arch aarch64_generic
+  [ "$status" -eq 1 ]
+}
+
+@test "removes a stale Packages.sig when rebuilding the index" {
+  printf 'stale' > "$FEED/Packages.sig"
+  run "$SCRIPT" --dir "$FEED" --arch aarch64_generic --retain 2
+  [ "$status" -eq 0 ]
+  [ ! -f "$FEED/Packages.sig" ]
+}
+
 @test "empty feed yields an empty index" {
   run "$SCRIPT" --dir "$TMP/empty" --arch x86_64
   [ "$status" -eq 0 ]

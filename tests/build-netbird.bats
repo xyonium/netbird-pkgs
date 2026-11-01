@@ -60,6 +60,32 @@ teardown() { rm -rf "$TMP"; }
   [ "$status" -eq 2 ]
 }
 
+@test "relative outdir still lands the binary at the expected path" {
+  cd "$TMP"
+  GO="$TMP/fake-go" FAKE_GO_VERSION=go1.26.2 SOURCE_DATE_EPOCH=1700000000 \
+    run "$SCRIPT" --arch x86_64 --version 0.82.0 --commit deadbeef \
+      --source "$TMP/src" --outdir out
+  [ "$status" -eq 0 ]
+  [ -x "$TMP/out/netbird" ]
+}
+
+@test "cross-arch build skips the native version self-check" {
+  cat > "$TMP/fake-go" <<'GO'
+#!/bin/sh
+if [ "$1" = version ]; then echo "go version go1.26.2 linux/amd64"; exit 0; fi
+if [ "$1" = build ]; then
+  while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out=$2; shift; done
+  printf '#!/bin/sh\nexit 42\n' > "$out"; chmod +x "$out"; exit 0
+fi
+exit 1
+GO
+  chmod +x "$TMP/fake-go"
+  GO="$TMP/fake-go" SOURCE_DATE_EPOCH=1700000000 \
+    run "$SCRIPT" --arch aarch64_generic --version 0.82.0 --commit deadbeef \
+      --source "$TMP/src" --outdir "$TMP/out"
+  [ "$status" -eq 0 ]
+}
+
 @test "builds and verifies the binary version" {
   GO="$TMP/fake-go" FAKE_GO_VERSION=go1.26.2 SOURCE_DATE_EPOCH=1700000000 \
     run "$SCRIPT" --arch x86_64 --version 0.82.0 --commit deadbeef \

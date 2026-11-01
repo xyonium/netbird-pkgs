@@ -31,6 +31,15 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "has push/PR CI and a LuCI watch workflow" {
+  run grep -q 'pull_request:' "$WF/ci.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'schedule:' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'gh pr create' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+}
+
 @test "declares the required jobs" {
   for job in build build-luci sign-publish deploy-pages; do
     run grep -q "^  $job:" "$WF/build-release.yml"

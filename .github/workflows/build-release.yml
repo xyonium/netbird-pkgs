@@ -75,7 +75,7 @@ jobs:
       - name: Checksums
         run: |
           set -eu
-          sha256sum dist/*.ipk > "dist/SHA256SUMS.${{ matrix.arch }}"
+          ( cd dist && sha256sum -- *.ipk > "SHA256SUMS.${{ matrix.arch }}" )
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: netbird-${{ matrix.arch }}
@@ -97,7 +97,12 @@ jobs:
           . versions/luci-app-netbird.env
           gh api "repos/looong-cat/luci-app-netbird/tarball/${LUCI_COMMIT}" -o /tmp/luci.tar.gz
           mkdir -p luci-app-netbird
-          tar -xzf /tmp/luci.tar.gz -C luci-app-netbird --strip-components=2
+          tar -xzf /tmp/luci.tar.gz -C luci-app-netbird --strip-components=1
+      - name: Stage binary_source patch
+        run: |
+          set -eu
+          mkdir -p luci-app-netbird/patches
+          cp packaging/luci-app-netbird/patches/*.patch luci-app-netbird/patches/
       - name: Build LuCI package
         uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434 # main
         env:
@@ -110,7 +115,9 @@ jobs:
           mkdir -p dist
           find bin/packages -name 'luci-app-netbird_*_all.ipk' -exec cp {} dist/ \;
           find bin/packages -name 'luci-i18n-netbird-zh-cn_*_all.ipk' -exec cp {} dist/ \;
-          sha256sum dist/*.ipk > dist/SHA256SUMS
+          ( cd dist && sha256sum -- *.ipk > SHA256SUMS.all )
+          ipk=$(find dist -name 'luci-app-netbird_*_all.ipk' | head -n 1)
+          tar -xOf "$ipk" ./data.tar.gz | tar -xzOf - ./etc/config/netbird_bin | grep -q "option binary_source 'opkg'"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: luci
@@ -160,14 +167,28 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Verify artifact checksums
+        run: |
+          set -eu
+          for sums in artifacts/SHA256SUMS*; do
+            [ -f "$sums" ] || continue
+            ( cd artifacts && sha256sum -c "$(basename "$sums")" )
+          done
+      - name: Preflight truth sources
+        run: |
+          set -eu
+          . versions/netbird.env
+          . versions/luci-app-netbird.env
+          test -f keys/netbird-pkgs.pub
+          echo "netbird ${NETBIRD_VERSION} luci ${LUCI_VERSION}-r${LUCI_PKG_RELEASE}"
       - name: Fetch previous releases for rollback
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          mkdir -p artifacts
+          mkdir -p prev
           gh release list --limit 3 --json tagName --jq '.[].tagName' | while read -r tag; do
-            gh release download "$tag" --pattern '*.ipk' --dir artifacts --clobber || true
+            gh release download "$tag" --pattern '*.ipk' --dir prev --clobber || true
           done
       - name: Assemble signed feeds
         env:
@@ -180,13 +201,21 @@ jobs:
           for arch in aarch64_generic x86_64; do
             mkdir -p "dist/pages/$arch"
             cp "artifacts/netbird_${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}_${arch}.ipk" "dist/pages/$arch/"
-            cp artifacts/luci-app-netbird_*_all.ipk artifacts/luci-i18n-netbird-zh-cn_*_all.ipk "dist/pages/$arch/" 2>/dev/null || true
-            scripts/make-feed.sh --dir "dist/pages/$arch" --arch "$arch" --retain 2
-            scripts/sign-feed.sh --dir "dist/pages/$arch" --key /tmp/key.sec --pub keys/netbird-pkgs.pub
+            cp artifacts/luci-app-netbird_*_all.ipk "dist/pages/$arch/" 2>/dev/null || true
+            cp artifacts/luci-i18n-netbird-zh-cn_*_all.ipk "dist/pages/$arch/" 2>/dev/null || true
           done
           scripts/make-istore.sh --ipk-dir artifacts \
             --outdir dist/istore --version "$NETBIRD_VERSION" --pkg-release "$NETBIRD_PKG_RELEASE"
-          cp -a dist/pages "$GITHUB_WORKSPACE/pages"
+          mkdir -p dist/pages/keys dist/pages/istore
+          cp keys/netbird-pkgs.pub dist/pages/keys/
+          cp -a dist/istore/bin/packages/aarch64_cortex-a53/nas/*.ipk dist/pages/istore/
+          for arch in aarch64_generic x86_64; do
+            cp prev/*_"${arch}".ipk "dist/pages/$arch/" 2>/dev/null || true
+            scripts/make-feed.sh --dir "dist/pages/$arch" --arch "$arch" --retain 2
+            scripts/sign-feed.sh --dir "dist/pages/$arch" --key /tmp/key.sec --pub keys/netbird-pkgs.pub
+          done
+          scripts/verify-feed.sh --dir dist/pages/aarch64_generic --pub keys/netbird-pkgs.pub
+          scripts/verify-feed.sh --dir dist/pages/x86_64 --pub keys/netbird-pkgs.pub
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -195,8 +224,12 @@ jobs:
           . versions/netbird.env
           tag="v${NETBIRD_VERSION}-r${NETBIRD_PKG_RELEASE}"
           tar -czf dist/istore-bundle.tar.gz -C dist istore
-          gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz \
-            --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz --clobber
+          else
+            gh release create "$tag" artifacts/*.ipk artifacts/SHA256SUMS.* dist/istore-bundle.tar.gz \
+              --title "$tag" --notes "netbird ${NETBIRD_VERSION}; source ${NETBIRD_COMMIT}"
+          fi
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "artifacts/*.ipk"
