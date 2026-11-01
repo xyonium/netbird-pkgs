@@ -1,0 +1,7 @@
+--- a/root/etc/config/netbird_bin
++++ b/root/etc/config/netbird_bin
+@@ -1,3 +1,3 @@
+ config netbird_bin 'binary'
+-	option binary_source 'release'
++	option binary_source 'opkg'
+ 	option release_url ''

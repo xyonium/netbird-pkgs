@@ -1,0 +1,3 @@
+config netbird_bin 'binary'
+	option binary_source 'release'
+	option release_url ''
