@@ -31,8 +31,7 @@ jobs:
       - name: Install test tools
         run: |
           set -eu
-          sudo apt-get update
-          sudo apt-get install -y bats shellcheck
+          scripts/install-test-deps.sh
       - name: Validate
         run: make lint test
       - name: Open PR
@@ -47,9 +46,12 @@ jobs:
             echo "PR already open for $branch"; exit 0
           fi
           git checkout -b "$branch"
-          sed -i "s|^LUCI_COMMIT=.*|LUCI_COMMIT=${COMMIT}|" versions/luci-app-netbird.env
-          release=$(sed -n 's/^LUCI_PKG_RELEASE=//p' versions/luci-app-netbird.env | head -n 1)
-          sed -i "s|^LUCI_PKG_RELEASE=.*|LUCI_PKG_RELEASE=$((release + 1))|" versions/luci-app-netbird.env
+          # The package version is whatever upstream pins: mirroring the
+          # Makefile keeps the env in step with the ipk the SDK will build.
+          gh api "repos/looong-cat/luci-app-netbird/contents/luci-app-netbird/Makefile?ref=${COMMIT}" \
+            --jq .content | base64 -d > /tmp/luci-Makefile
+          scripts/update-luci-env.sh --env-file versions/luci-app-netbird.env \
+            --commit "$COMMIT" --makefile /tmp/luci-Makefile
           git config user.name "netbird-pkgs bot"
           git config user.email "bot@users.noreply.github.com"
           git add versions/luci-app-netbird.env

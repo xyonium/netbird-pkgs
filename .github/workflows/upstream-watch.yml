@@ -22,8 +22,11 @@ jobs:
           gh api repos/netbirdio/netbird/releases/latest > /tmp/release.json
           tag=$(jq -r .tag_name /tmp/release.json)
           commit=$(gh api "repos/netbirdio/netbird/commits/${tag}" --jq .sha)
-          url=$(jq -r .tarball_url /tmp/release.json)
-          curl -fsSL "$url" -o /tmp/netbird-src.tar.gz
+          # Checksum the archive build-release verifies. The releases API
+          # archive redirects to legacy.tar.gz, a different byte stream with a
+          # different root directory, so its sha256 would never match.
+          curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/${tag}" \
+            -o /tmp/netbird-src.tar.gz
           scripts/resolve-upstream.sh \
             --repo netbirdio/netbird \
             --fixture /tmp/release.json --commit "$commit" \

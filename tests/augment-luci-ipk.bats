@@ -16,3 +16,18 @@ teardown() { rm -rf "$TMP"; }
   [[ "$output" == *"doc/luci-app-netbird/LICENSE"* ]]
   [[ "$output" == *"doc/luci-app-netbird/NOTICE"* ]]
 }
+
+@test "keeps the original package payload" {
+  run "$SCRIPT" --ipk "$TMP/luci-app-netbird_0.1.0-r26_all.ipk" --license "$TMP/LICENSE" --notice "$TMP/NOTICE"
+  [ "$status" -eq 0 ]
+  run bash -c "tar -xOf '$TMP/luci-app-netbird_0.1.0-r26_all.ipk' ./data.tar.gz | tar -tzf -"
+  [[ "$output" == *"usr/bin/luci-app-netbird"* ]]
+}
+
+@test "keeps the control metadata untouched" {
+  before=$(tar -xOf "$TMP/luci-app-netbird_0.1.0-r26_all.ipk" ./control.tar.gz | tar -xzOf - ./control)
+  run "$SCRIPT" --ipk "$TMP/luci-app-netbird_0.1.0-r26_all.ipk" --license "$TMP/LICENSE" --notice "$TMP/NOTICE"
+  [ "$status" -eq 0 ]
+  after=$(tar -xOf "$TMP/luci-app-netbird_0.1.0-r26_all.ipk" ./control.tar.gz | tar -xzOf - ./control)
+  [ "$before" = "$after" ]
+}

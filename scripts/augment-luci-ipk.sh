@@ -12,6 +12,10 @@ while [ $# -gt 0 ]; do case "$1" in
 [ -f "$ipk" ] && [ -f "$license" ] && [ -f "$notice" ] || usage
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT INT TERM
 tar -xzf "$ipk" -C "$work"
+# An ipk is a container of tarballs: unpack the payload before adding files,
+# otherwise the rewrapped data.tar.gz would contain the documents alone.
+mkdir -p "$work/data"
+tar -xzf "$work/data.tar.gz" -C "$work/data"
 mkdir -p "$work/data/usr/share/doc/luci-app-netbird"
 cp "$license" "$work/data/usr/share/doc/luci-app-netbird/LICENSE"
 cp "$notice" "$work/data/usr/share/doc/luci-app-netbird/NOTICE"

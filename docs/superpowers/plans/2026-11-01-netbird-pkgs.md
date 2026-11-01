@@ -484,7 +484,7 @@ git commit -m "feat(install): idempotent device feed and key setup"
 
 - [ ] **Step 2: 运行确认失败**
 
-- [ ] **Step 3: 实现**：`patch -p1 < …`；调用 `make -C "$SDK" package/luci-app-netbird/compile`；复制上游 `LICENSE`/`NOTICE` 到 `data/usr/share/doc/luci-app-netbird/` 并追加 Tailscale BSD-3 文本；产物交 `verify-ipk.sh --arch all`。
+- [ ] **Step 3: 实现**：`patch -p1 < …`；调用 `make -C "$SDK" package/luci-app-netbird/compile`；复制上游 `LICENSE`/`NOTICE` 到 `data/usr/share/doc/luci-app-netbird/` 并追加 Tailscale BSD-3 文本；产物交 `verify-luci-ipk.sh --ipk <ipk> --version-env versions/luci-app-netbird.env`（`verify-ipk.sh` 只校验 netbird 客户端包）。
 
 - [ ] **Step 4: 运行确认通过**
 

@@ -53,3 +53,74 @@ setup() {
   run bash -c "grep -rh 'uses:' '$WF' | grep -vE '@[0-9a-f]{40}([[:space:]]|$)'"
   [ "$status" -eq 1 ]
 }
+
+@test "upstream-watch checksums the codeload archive, not the API tarball_url" {
+  run grep -q 'tarball_url' "$WF/upstream-watch.yml"
+  [ "$status" -eq 1 ]
+  run grep -q 'codeload.github.com/netbirdio/netbird/tar.gz/' "$WF/upstream-watch.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "upstream-watch and build-release download from the same tarball base URL" {
+  base='https://codeload.github.com/netbirdio/netbird/tar.gz/'
+  run grep -Fq "$base" "$WF/upstream-watch.yml"
+  [ "$status" -eq 0 ]
+  run grep -Fq "$base" "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "derives SOURCE_DATE_EPOCH through the shared script, never inline git log" {
+  run grep -q 'git log -1 --format=%ct' "$WF/build-release.yml"
+  [ "$status" -eq 1 ]
+  run grep -q 'scripts/source-date-epoch.sh' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "every release checkout fetches full history so the epoch is stable" {
+  checkouts=$(grep -c 'actions/checkout' "$WF/build-release.yml")
+  depths=$(grep -c 'fetch-depth: 0' "$WF/build-release.yml")
+  [ "$checkouts" -eq "$depths" ]
+}
+
+@test "every workflow that runs the test suite installs the test dependencies" {
+  for wf in "$WF"/*.yml; do
+    grep -qE 'make (lint )?test' "$wf" || continue
+    run grep -q 'scripts/install-test-deps.sh' "$wf"
+    [ "$status" -eq 0 ]
+    echo "checked $wf"
+  done
+}
+
+@test "the test dependency installer provides usign, which the e2e flow signs with" {
+  run grep -q 'usign' "$BATS_TEST_DIRNAME/../scripts/install-test-deps.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "the reproducibility job packages the same inputs as the release build" {  run awk '
+    { line = $0
+      while (line ~ /\\$/) {
+        sub(/\\$/, "", line)
+        if ((getline nxt) > 0) { line = line " " nxt } else { break }
+      }
+      if (line ~ /build-netbird-ipk\.sh/) print line
+    }' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+  total=$(printf '%s\n' "$output" | grep -c 'build-netbird-ipk\.sh')
+  noticed=$(printf '%s\n' "$output" | grep -c -- '--notices')
+  [ "$total" -ge 2 ]
+  [ "$total" -eq "$noticed" ]
+}
+
+@test "luci-watch mirrors the upstream Makefile instead of blind-bumping the release" {
+  run grep -q 'scripts/update-luci-env.sh' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'release + 1' "$WF/luci-watch.yml"
+  [ "$status" -eq 1 ]
+}
+
+@test "the rollback fetch fails the release instead of silently dropping versions" {
+  run grep -q 'scripts/fetch-previous-ipks.sh' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+  run bash -c "grep 'gh release download' '$WF/build-release.yml' | grep -c '|| true'"
+  [ "$status" -eq 1 ]
+}

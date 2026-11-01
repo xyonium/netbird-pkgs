@@ -91,3 +91,9 @@ Description: ok" /bin/true "#!/bin/sh"
   run "$VERIFY" --ipk "$TMP/ok/test.ipk" --arch x86_64 --skip-binary-check
   [ "$status" -eq 0 ]
 }
+
+@test "does not advertise an arch it cannot verify" {
+  run "$VERIFY" --help
+  [ "$status" -eq 2 ]
+  [[ "$output" != *"|all>"* ]]
+}

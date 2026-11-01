@@ -9,8 +9,11 @@ export LC_ALL TZ
 
 usage() {
 	cat >&2 <<'EOF'
-usage: verify-ipk.sh --ipk <path> --arch <aarch64_generic|x86_64|all> \
+usage: verify-ipk.sh --ipk <path> --arch <aarch64_generic|x86_64> \
          [--version <v>] [--skip-binary-check]
+
+This verifier is for the netbird client ipk only. Use verify-luci-ipk.sh for
+the luci-app-netbird package.
 EOF
 	exit 2
 }

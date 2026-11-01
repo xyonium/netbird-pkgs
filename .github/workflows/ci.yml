@@ -16,12 +16,7 @@ jobs:
       - name: Install tools
         run: |
           set -eu
-          sudo apt-get update
-          sudo apt-get install -y bats shellcheck cmake build-essential
-          git clone --depth 1 https://github.com/openwrt/usign /tmp/usign
-          cmake -S /tmp/usign -B /tmp/usign/build >/dev/null
-          make -C /tmp/usign/build >/dev/null
-          sudo install -m0755 /tmp/usign/build/usign /usr/local/bin/usign
+          scripts/install-test-deps.sh
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Lint

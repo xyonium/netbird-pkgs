@@ -17,6 +17,14 @@ teardown() { rm -rf "$TMP"; }
   grep -q "option binary_source 'opkg'" "$SRC/root/etc/config/netbird_bin"
 }
 
+@test "applies the patch cleanly and leaves no backup or reject files" {
+  run "$SCRIPT" --source "$SRC" --version 0.1.0 --release 26 \
+    --outdir "$TMP/out" --patch-only
+  [ "$status" -eq 0 ]
+  [ ! -e "$SRC/root/etc/config/netbird_bin.orig" ]
+  [ ! -e "$SRC/root/etc/config/netbird_bin.rej" ]
+}
+
 @test "refuses to apply an already applied patch" {
   "$SCRIPT" --source "$SRC" --version 0.1.0 --release 26 \
     --outdir "$TMP/out" --patch-only >/dev/null
@@ -52,6 +60,31 @@ MK
   run bash -c "tar -xOf '$ipk' ./data.tar.gz | tar -tzf - | grep -q 'doc/luci-app-netbird/LICENSE'"
   [ "$status" -eq 0 ]
   run bash -c "tar -xOf '$ipk' ./data.tar.gz | tar -tzf - | grep -q 'doc/luci-app-netbird/NOTICE'"
+  [ "$status" -eq 0 ]
+}
+
+@test "keeps the SDK-built payload when adding licenses" {
+  printf 'Apache-2.0\n' > "$SRC/LICENSE"
+  printf 'NOTICE\n' > "$SRC/NOTICE"
+  mkdir -p "$TMP/sdk/bin/packages/x86_64/base"
+  cat > "$TMP/sdk/Makefile" <<'MK'
+package/luci-app-netbird/compile:
+	mkdir -p bin/packages/x86_64/base work/control work/data/etc/config work/data/htdocs/luci-static
+	printf 'Package: luci-app-netbird\nVersion: 0.1.0-r26\nArchitecture: all\nDescription: x\n' > work/control/control
+	echo x > work/data/etc/config/netbird_bin
+	echo y > work/data/htdocs/luci-static/netbird.js
+	tar -C work/control -czf work/control.tar.gz ./control
+	tar -C work/data -czf work/data.tar.gz ./etc ./htdocs
+	printf '2.0\n' > work/debian-binary
+	tar -C work -czf bin/packages/x86_64/base/luci-app-netbird_0.1.0-r26_all.ipk ./debian-binary ./data.tar.gz ./control.tar.gz
+MK
+  run "$SCRIPT" --source "$SRC" --sdk "$TMP/sdk" --version 0.1.0 --release 26 --outdir "$TMP/out"
+  [ "$status" -eq 0 ]
+  ipk="$TMP/out/luci-app-netbird_0.1.0-r26_all.ipk"
+  run bash -c "tar -xOf '$ipk' ./data.tar.gz | tar -tzf -"
+  [[ "$output" == *"etc/config/netbird_bin"* ]]
+  [[ "$output" == *"htdocs/luci-static/netbird.js"* ]]
+  run bash -c "tar -xOf '$ipk' ./control.tar.gz | tar -xzOf - ./control | grep -q '^Version: 0.1.0-r26$'"
   [ "$status" -eq 0 ]
 }
 
