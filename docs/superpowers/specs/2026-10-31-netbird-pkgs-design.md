@@ -13,6 +13,7 @@
 | v2.1 | 2026-10-31 | 补充自建管理面（自定义 management URL）与配置/状态存放说明；确认 GitHub 用户名为 `xyonium`；`/etc/netbird.env` 白名单增加 `SSL_CERT_FILE` |
 | v2.2 | 2026-11-01 | 澄清范围边界：客户端完整支持自建管理面；服务端组件的分发与部署仍不在本仓库；修正非目标表述 |
 | v2.3 | 2026-11-01 | 按 iStoreOS 实际 PR 机制重写上架章节：预编译 ipk + `pending` 分支 + `openwrt-app-meta` 元数据；新增 iStore bundle 产物、脚本契约与测试 |
+| v2.4 | 2026-11-01 | 澄清 `aarch64_cortex-a53` 是 iStoreOS 的 feed 架构标签而非 CPU 适配（其 arch 表同时含 `aarch64_generic 5` 与 `aarch64_cortex-a53 10`）；补 PR 说明措辞 |
 
 ## 1. 背景与目标
 
@@ -56,7 +57,7 @@ OPNsense 侧同理：`netbird` 二进制包在 25.7 源里是 `0.60.7`，26.1 �
 
 `x86_64` 产物面向通用 x86 软路由与虚拟机：本期无固定验收设备，只做 CI 构建、结构与静态链接校验（§12.3），并在需要时用 x86 OpenWrt rootfs 做一次容器安装（§12.1 L4）。
 
-架构命名有两套：本机 opkg feed 用设备实际架构 `aarch64_generic`；iStore 商店要求 aarch64 的 ipk 标注为 `aarch64_cortex-a53`（§16），由同一份二进制重打包得到。两者不混用：设备日常升级走自建 feed，iStore 只用于商店分发。
+架构命名有两套：本机 opkg feed 用设备实际架构 `aarch64_generic`；iStore 商店的 aarch64 ipk 必须标注为 `aarch64_cortex-a53`（§16），由同一份二进制重打包得到。**这不是 CPU 适配要求**：iStoreOS 在 aarch64 设备的 opkg 架构表里同时登记了 `aarch64_generic 5` 与 `aarch64_cortex-a53 10`，因此标为 cortex-a53 的包可以直接安装；Go 的 arm64 产物是通用 ARMv8-A，A53/A55/A72 都能跑。两者不混用：设备日常升级走自建 feed，iStore 只用于商店分发。
 
 ## 3. 关键约束（实测确认，非推测）
 
@@ -843,6 +844,16 @@ opkg remove netbird                # 进程停止，/etc/netbird 保留
 - PR 目标分支必须是 `pending`；只允许在 `bin/` 下新增包文件，不能改 `.github/workflows`；合并时自动清理同包旧版本。
 - 目录：`bin/packages/<arch>/<category>/<pkg>_<version>-r<release>_<arch>.ipk`；架构目录为 `aarch64_cortex-a53`、`x86_64`、`all`；类别常用 `nas`（二进制）与 `nas_luci`（LuCI）。
 - 文件名必须带版本且不可重复；aarch64 的 ipk 必须标为 `aarch64_cortex-a53`。
+- 为什么是 a53：iStoreOS 的 aarch64 opkg 配置（仓库内 `bin/packages/aarch64_cortex-a53/isfeeds.conf`）声明了
+
+  ```
+  arch all 1
+  arch noarch 1
+  arch aarch64_generic 5
+  arch aarch64_cortex-a53 10
+  ```
+
+  即设备原生架构是 `aarch64_generic`（优先级 5），iStore 额外接受 `aarch64_cortex-a53`（优先级 10）。这只是**feed 架构标签**，不是把二进制按 A53 指令集编译；Go 产物是通用 ARMv8-A，RK3399（A72/A53）与 RK3568（A55）都能运行。
 - 新软件还需向 [`linkease/openwrt-app-meta`](https://github.com/linkease/openwrt-app-meta) 提交 `applications/app-meta-<name>/{Makefile,logo.png}`；`istore-repo` 的 PR 模板要求附上该 PR 链接。
 - README 规定「不要提交 OpenWrt 官方仓库已有的包」，但存在反例：`tailscale` 在官方源，`istore-repo` 仍收录 `tailscale_1.104.1-r1_*`。因此 netbird 可以按「官方版本过旧」提交并说明，但不能保证被接受。
 
@@ -889,7 +900,9 @@ META_WEBSITE:=https://netbird.io
 1. **元数据 PR**：fork `openwrt-app-meta` → 从 `main` 拉临时分支 → 把 `dist/istore/applications/app-meta-netbird/` 原样复制进 fork 的 `applications/` → 提交 PR。
 2. **ipk PR**：fork `istore-repo` → 从 `main` 拉临时分支 → 把 `dist/istore/bin/packages/**` 原样复制到 fork 的 `bin/packages/**` → 目标分支选 `pending`。
 3. 填写 PR 模板：文件已上传、目标分支 `pending`、源码仓库 `https://github.com/xyonium/netbird-pkgs`、元数据 PR 链接。
-4. PR 描述说明：官方源 `netbird` 仍为 0.59.13，本包为 0.82.0；`luci-app-netbird` 为第三方包（官方源没有），两者配合使用。
+4. PR 描述按「补齐最新且完整」写：
+
+   > 官方 OpenWrt 源的 `netbird` 仍为 0.59.13，iStore 中也缺少可用的 LuCI 管理界面；本 PR 提供最新的 `netbird 0.82.0`（aarch64_cortex-a53 / x86_64）与 `luci-app-netbird 0.1.0-r26`，补齐「最新二进制 + LuCI」的完整组合。源码与构建：https://github.com/xyonium/netbird-pkgs 。
 5. 合并由上游维护者决定；索引由上游 CI 生成，本仓库**不写** iStore 索引、不改其 workflows。
 
 ### 风险与边界
@@ -953,7 +966,7 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 13. `-X main.commit`、`-X main.date`、`-X main.builtBy` 注入后 `netbird version` 输出格式符合预期，且两次构建一致
 14. 自建管理面的 signal/relay 端点在目标网络可达；私有 CA 通过系统信任库或 `SSL_CERT_FILE` 生效
 15. iStore 维护者是否接受 netbird（官方源已有包）；不接受时退化为只上架 `luci-app-netbird`
-16. iStore 安装器在 `aarch64_generic` 设备上安装 `aarch64_cortex-a53` ipk 的架构处理（是否 force-arch）
+16. 在 R4S/R68S 上用 iStore「手动安装」上传 cortex-a53 变体，验证装、启、升级均正常（arch 表已允许，仍需真机确认）
 17. `openwrt-app-meta` 的 CI 对 logo、字段、版本的具体校验（提交前按其 CI 规则预检）
 
 ## 20. 附录：事实核查记录
@@ -999,6 +1012,8 @@ Go 可原生交叉编译到 `freebsd/amd64`（ports 使用 `-tags freebsd`）。
 | iStore 元数据字段 | `PKG_VERSION`/`PKG_RELEASE`/`META_TITLE`/`META_DEPENDS`/`META_ARCH`/`META_LUCI_ENTRY`/`META_WEBSITE` 等 | 其 README 与样例 Makefile |
 | iStore PR 模板要求 | 勾选目标分支、文件已上传、元数据 PR 链接、源码仓库 | `.github/pull_request_template.md` |
 | iStore CI 校验 | 仅从 ipk 的 `control.tar.gz` 提取 `Package` 字段（其余靠索引生成） | 其 `pr.yml` |
+| iStoreOS aarch64 arch 表 | `all 1`、`noarch 1`、`aarch64_generic 5`、`aarch64_cortex-a53 10` | `istore-repo` `bin/packages/aarch64_cortex-a53/isfeeds.conf` |
+| iStoreOS aarch64 feed | `src/gz is_nas https://istore.istoreos.com/repo/aarch64_cortex-a53/nas` | 同上 |
 
 ## 21. 需要使用者提供的信息
 
