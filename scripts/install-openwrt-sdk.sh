@@ -52,10 +52,30 @@ fi
 echo "${sha256}  ${tarball}" | sha256sum -c - >/dev/null \
 	|| { echo "SDK checksum mismatch for ${name}" >&2; exit 1; }
 
-rm -rf "$dest"
-mkdir -p "$dest"
-tar --zstd -xf "$tarball" -C "$dest" --strip-components=1
-[ -x "$dest/scripts/feeds" ] || { echo "not an SDK tree: $dest" >&2; exit 1; }
+# Extract to a staging dir first. Tarballs differ in shape: some wrap
+# everything in one directory, some prefix entries with "./", and the prefix
+# counts as a component for --strip-components, so strip nothing and normalise
+# afterwards instead.
+rm -rf "$dest" "$dest.stage"
+mkdir -p "$dest.stage"
+tar --zstd -xf "$tarball" -C "$dest.stage"
+
+src="$dest.stage"
+if [ ! -x "$dest.stage/scripts/feeds" ]; then
+	# Not flat: expect exactly one top-level directory wrapping the SDK.
+	set -- "$dest.stage"/*
+	if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
+		echo "not an SDK tarball: expected one top-level directory or an SDK at the root" >&2
+		rm -rf "$dest.stage"
+		exit 1
+	fi
+	src=$1
+fi
+[ -x "$src/scripts/feeds" ] \
+	|| { echo "not an SDK tree: no scripts/feeds inside the tarball" >&2; rm -rf "$dest.stage"; exit 1; }
+
+mv "$src" "$dest"
+rm -rf "$dest.stage"
 
 (
 	cd "$dest"

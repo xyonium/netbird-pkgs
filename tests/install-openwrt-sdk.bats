@@ -17,8 +17,15 @@ setup() {
 exit 0
 FEEDS
   chmod +x "$TMP/tree/openwrt-sdk/scripts/feeds"
+  # Every tarball carries a single top-level directory, but some are written
+  # with a "./" prefix and some without; --strip-components=1 counts that
+  # prefix as a component, so both forms must be handled.
   ( cd "$TMP/tree" && tar --zstd -cf "$TMP/sdk.tar.zst" ./openwrt-sdk )
+  ( cd "$TMP/tree" && tar --zstd -cf "$TMP/sdk-nodot.tar.zst" openwrt-sdk )
+  ( cd "$TMP/tree/openwrt-sdk" && tar --zstd -cf "$TMP/sdk-flat.tar.zst" . )
   SHA=$(sha256sum "$TMP/sdk.tar.zst" | awk '{print $1}')
+  SHA_NODOT=$(sha256sum "$TMP/sdk-nodot.tar.zst" | awk '{print $1}')
+  SHA_FLAT=$(sha256sum "$TMP/sdk-flat.tar.zst" | awk '{print $1}')
 }
 
 teardown() { rm -rf "$TMP"; }
@@ -58,4 +65,31 @@ teardown() { rm -rf "$TMP"; }
 @test "requires version, sha256 and dest" {
   run "$SCRIPT" --version 24.10.4
   [ "$status" -eq 2 ]
+}
+
+@test "handles a tarball whose entries have no ./-prefix" {
+  [ -z "${SKIP_ZSTD:-}" ] || skip "zstd not installed"
+  run "$SCRIPT" --version 24.10.4 --sha256 "$SHA_NODOT" \
+    --dest "$TMP/dest" --tarball "$TMP/sdk-nodot.tar.zst"
+  [ "$status" -eq 0 ]
+  [ -x "$TMP/dest/scripts/feeds" ]
+}
+
+@test "rejects a tarball with more than one top-level entry" {
+  [ -z "${SKIP_ZSTD:-}" ] || skip "zstd not installed"
+  mkdir -p "$TMP/two/a" "$TMP/two/b"
+  ( cd "$TMP/two" && tar --zstd -cf "$TMP/two.tar.zst" a b )
+  two=$(sha256sum "$TMP/two.tar.zst" | awk '{print $1}')
+  run "$SCRIPT" --version 24.10.4 --sha256 "$two" \
+    --dest "$TMP/dest" --tarball "$TMP/two.tar.zst"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected one top-level directory"* ]]
+}
+
+@test "handles a tarball that unpacks straight into the destination" {
+  [ -z "${SKIP_ZSTD:-}" ] || skip "zstd not installed"
+  run "$SCRIPT" --version 24.10.4 --sha256 "$SHA_FLAT" \
+    --dest "$TMP/dest" --tarball "$TMP/sdk-flat.tar.zst"
+  [ "$status" -eq 0 ]
+  [ -x "$TMP/dest/scripts/feeds" ]
 }
