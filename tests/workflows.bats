@@ -76,7 +76,9 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "every release checkout fetches full history so the epoch is stable" {
+@test "every release checkout fetches full history" {
+  # Full history is what makes SOURCE_DATE_EPOCH stable, and it is cheap here;
+  # keeping every checkout uniform means nobody has to work out which job needs it.
   checkouts=$(grep -c 'actions/checkout' "$WF/build-release.yml")
   depths=$(grep -c 'fetch-depth: 0' "$WF/build-release.yml")
   [ "$checkouts" -eq "$depths" ]
@@ -164,4 +166,35 @@ setup() {
     [ "$status" -eq 0 ]
     echo "checked $wf"
   done
+}
+
+@test "the netbird matrix legs upload only their ipk and checksum" {
+  # Both legs produce dist/netbird and dist/THIRD-PARTY-NOTICES.txt under the
+  # same names; merge-multiple would let one silently overwrite the other.
+  run bash -c "awk '/^  build:\$/,/^  build-luci:\$/' '$WF/build-release.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dist/*.ipk"* ]]
+  [[ "$output" == *"dist/SHA256SUMS.*"* ]]
+  run bash -c "awk '/^  build:\$/,/^  build-luci:\$/' '$WF/build-release.yml' | grep -nE '^ *path: dist/\$'"
+  [ "$status" -eq 1 ]
+}
+
+@test "publishes the LuCI ipk alongside the iStore ipk on Pages" {
+  run grep -q 'luci-app-netbird_\*_all.ipk dist/pages/istore' "$WF/build-release.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "deploy-pages spot-checks the public feed after deploying" {
+  run bash -c "awk '/^  deploy-pages:\$/,0' '$WF/build-release.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"github.io"* ]]
+  [[ "$output" == *"Packages"* ]]
+}
+
+@test "pins the usign build instead of cloning a moving branch" {
+  script="$BATS_TEST_DIRNAME/../scripts/install-test-deps.sh"
+  run grep -qE '^USIGN_COMMIT=[0-9a-f]{40}$' "$script"
+  [ "$status" -eq 0 ]
+  run grep -q 'git clone' "$script"
+  [ "$status" -eq 1 ]
 }

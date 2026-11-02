@@ -37,6 +37,15 @@ commit=$commit_override
 [ -n "$commit" ] || commit=$(sed -n 's/.*"target_commitish"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$fixture" | head -n 1)
 [ -n "$tag" ] || { echo "fixture has no tag_name" >&2; exit 1; }
 
+# The fixture must describe the repository we were told to watch; otherwise a
+# copy-pasted or replayed response could silently pin someone else's release.
+fixture_repo=$(grep -o 'https://github\.com/[^"/]*/[^"/]*/releases/tag/' "$fixture" | head -n 1 \
+	| sed 's|https://github.com/||; s|/releases/tag/$||')
+[ -n "$fixture_repo" ] \
+	|| { echo "fixture does not identify its repository (no /releases/tag/ URL)" >&2; exit 1; }
+[ "$fixture_repo" = "$repo" ] \
+	|| { echo "fixture belongs to $fixture_repo, not $repo" >&2; exit 1; }
+
 version=${tag#v}
 sha=$(sha256sum "$tarball" | awk '{print $1}')
 

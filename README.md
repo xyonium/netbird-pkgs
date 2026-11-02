@@ -42,6 +42,6 @@ make e2e            # 两次构建比对 + 索引 + 签名 + 假 root 安装
 
 ## 许可
 
-本仓库脚本与文档：MIT。`netbird` 客户端：BSD-3-Clause，许可文本随包安装；
-`luci-app-netbird`：Apache-2.0。详见 [docs/REVIEW.md](docs/REVIEW.md) 与包内
-`/usr/share/licenses/`。
+本仓库脚本与文档：MIT。`netbird` 客户端：BSD-3-Clause，许可与第三方声明装在
+`/usr/share/licenses/netbird/`；`luci-app-netbird`：Apache-2.0，装在
+`/usr/share/doc/luci-app-netbird/`。详见 [docs/REVIEW.md](docs/REVIEW.md)。

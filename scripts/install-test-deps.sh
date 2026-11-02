@@ -8,13 +8,18 @@
 set -eu
 
 prefix=${PREFIX:-/usr/local/bin}
+# Pinned so a force-push or a broken master cannot change what CI installs.
+USIGN_COMMIT=c4c72b1b07945ee192361dc751291a7c98d6adcd
 
 sudo apt-get update
 sudo apt-get install -y bats shellcheck cmake build-essential
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
-git clone --depth 1 https://github.com/openwrt/usign "$work/usign"
+git init -q "$work/usign"
+git -C "$work/usign" remote add origin https://github.com/openwrt/usign
+git -C "$work/usign" fetch -q --depth 1 origin "$USIGN_COMMIT"
+git -C "$work/usign" checkout -q FETCH_HEAD
 cmake -S "$work/usign" -B "$work/usign/build" >/dev/null
 make -C "$work/usign/build" >/dev/null
 sudo install -m0755 "$work/usign/build/usign" "$prefix/usign"

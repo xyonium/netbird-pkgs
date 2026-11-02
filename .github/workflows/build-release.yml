@@ -81,7 +81,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: netbird-${{ matrix.arch }}
-          path: dist/
+          path: |
+            dist/*.ipk
+            dist/SHA256SUMS.*
 
   build-luci:
     if: github.event_name != 'schedule' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -243,6 +245,7 @@ jobs:
           mkdir -p dist/pages/keys dist/pages/istore
           cp keys/netbird-pkgs.pub dist/pages/keys/
           cp -a dist/istore/bin/packages/aarch64_cortex-a53/nas/*.ipk dist/pages/istore/
+          cp artifacts/luci-app-netbird_*_all.ipk dist/pages/istore/
           for arch in aarch64_generic x86_64; do
             cp prev/*_"${arch}".ipk "dist/pages/$arch/" 2>/dev/null || true
             scripts/make-feed.sh --dir "dist/pages/$arch" --arch "$arch" --retain 2
@@ -280,7 +283,50 @@ jobs:
     timeout-minutes: 10
     environment: github-pages
     permissions:
+      contents: read
       pages: write
       id-token: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Install tools
+        run: |
+          set -eu
+          scripts/install-test-deps.sh
+      - name: Verify the published feed
+        run: |
+          set -eu
+          # Pages sits behind a CDN with max-age=600, so every fetch is
+          # cache-busted against this run; otherwise the previous deployment
+          # would satisfy the check. usign only needs the public key, so this
+          # job still never sees the signing secret. Everything is retried:
+          # a first deployment can take longer than one propagation window,
+          # and per-URL propagation is not atomic.
+          base="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+          bust="v=${GITHUB_RUN_ID}"
+          key_sha=$(sha256sum keys/netbird-pkgs.pub | awk '{print $1}')
+
+          verify() {
+            got=$(curl -fsSL --max-time 20 "$base/keys/netbird-pkgs.pub?$bust" 2>/dev/null \
+              | sha256sum | awk '{print $1}')
+            [ "$key_sha" = "$got" ] || return 1
+            for arch in aarch64_generic x86_64; do
+              curl -fsSL --max-time 20 "$base/$arch/Packages.gz?$bust" \
+                -o "/tmp/$arch.Packages.gz" || return 1
+              curl -fsSL --max-time 20 "$base/$arch/Packages.sig?$bust" \
+                -o "/tmp/$arch.Packages.sig" || return 1
+              gzip -dc "/tmp/$arch.Packages.gz" > "/tmp/$arch.Packages" || return 1
+              usign -V -m "/tmp/$arch.Packages" -p keys/netbird-pkgs.pub \
+                -x "/tmp/$arch.Packages.sig" || return 1
+            done
+          }
+
+          ok=0
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if verify; then ok=1; break; fi
+            sleep 10
+          done
+          [ "$ok" -eq 1 ] || { echo "published feed did not verify within 2 minutes" >&2; exit 1; }
+          echo "published feed ok: $base"

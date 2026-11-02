@@ -38,6 +38,8 @@ mkdir -p "$tmp/root"
 	--arch x86_64 --root "$tmp/root" --yes >/dev/null
 grep -q '^src/gz netbird-pkgs ' "$tmp/root/etc/opkg/customfeeds.conf"
 
-mkdir -p "$root/dist/e2e"
-cp -a "$tmp/feed" "$root/dist/e2e/feed"
-echo "e2e ok: dist/e2e/feed"
+out=${E2E_OUT:-$root/dist/e2e}
+mkdir -p "$out"
+rm -rf "$out/feed"
+cp -a "$tmp/feed" "$out/feed"
+echo "e2e ok: $out/feed"
