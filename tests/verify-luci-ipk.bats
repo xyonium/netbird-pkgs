@@ -5,7 +5,10 @@ load helper
 setup() {
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/verify-luci-ipk.sh"
   TMP="$(mktemp -d)"
-  mkdir -p "$TMP/build/control" "$TMP/build/data/etc/config" "$TMP/build/data/usr/share/doc/luci-app-netbird"
+  mkdir -p "$TMP/build/control" "$TMP/build/data/etc/config" "$TMP/build/data/usr/share/doc/luci-app-netbird" \
+    "$TMP/build/data/usr/share/luci/menu.d"
+  printf '{\n\t"admin/vpn/netbird": {\n\t\t"title": "NetBird"\n\t}\n}\n' \
+    > "$TMP/build/data/usr/share/luci/menu.d/luci-app-netbird.json"
   cat > "$TMP/build/control/control" <<'CTRL'
 Package: luci-app-netbird
 Version: 0.1.0-r26
@@ -77,4 +80,14 @@ teardown() { rm -rf "$TMP"; }
 @test "requires an ipk" {
   run "$SCRIPT" --version-env "$TMP/luci.env"
   [ "$status" -eq 2 ]
+}
+
+@test "rejects a package whose menu entry fell back to Services" {
+  printf '{\n\t"admin/services/netbird": {\n\t\t"title": "NetBird"\n\t}\n}\n' \
+    > "$TMP/build/data/usr/share/luci/menu.d/luci-app-netbird.json"
+  ( cd "$TMP/build/data" && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf ../data.tar.gz ./etc ./usr )
+  ( cd "$TMP/build" && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf "$TMP/menu.ipk" ./debian-binary ./data.tar.gz ./control.tar.gz )
+  run "$SCRIPT" --ipk "$TMP/menu.ipk" --version-env "$TMP/luci.env"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"VPN"* ]]
 }

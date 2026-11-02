@@ -74,6 +74,15 @@ for doc in LICENSE NOTICE; do
 		|| note_fail "payload is missing usr/share/doc/luci-app-netbird/$doc"
 done
 
+# 0002 moves the app from Services into the VPN category; make sure the shipped
+# menu still carries that, not the upstream default.
+menu="$work/root/usr/share/luci/menu.d/luci-app-netbird.json"
+if [ ! -f "$menu" ]; then
+	note_fail "payload is missing usr/share/luci/menu.d/luci-app-netbird.json"
+elif ! grep -q '"admin/vpn/netbird"' "$menu"; then
+	note_fail "menu entry is not under VPN (expected admin/vpn/netbird)"
+fi
+
 if [ "$fail" -ne 0 ]; then
 	exit 1
 fi

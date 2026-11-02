@@ -35,14 +35,35 @@ done
 	|| { echo "source has no root/etc/config/netbird_bin: $source_dir" >&2; exit 1; }
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
-patch_file="$script_dir/../packaging/luci-app-netbird/patches/0001-default-binary-source-opkg.patch"
-[ -f "$patch_file" ] || { echo "missing patch: $patch_file" >&2; exit 1; }
+patch_dir="$script_dir/../packaging/luci-app-netbird/patches"
+[ -d "$patch_dir" ] || { echo "missing patch dir: $patch_dir" >&2; exit 1; }
 
-if ! patch -p1 -d "$source_dir" --dry-run -i "$patch_file" >/dev/null 2>&1; then
-	echo "patch does not apply (already applied or upstream diverged): $patch_file" >&2
+# Apply every patch in order (LC_ALL=C is exported above, so the glob sorts
+# deterministically). A patch that stops applying means upstream moved, which
+# must stop the build rather than silently ship an unpatched package.
+applied=0
+for p in "$patch_dir"/*.patch; do
+	[ -f "$p" ] || continue
+	applied=$((applied + 1))
+	if ! patch -p1 -d "$source_dir" --dry-run -i "$p" >/dev/null 2>&1; then
+		echo "patch does not apply (already applied or upstream diverged): $p" >&2
+		exit 1
+	fi
+	patch -p1 -d "$source_dir" -i "$p" >/dev/null || { echo "patch failed: $p" >&2; exit 1; }
+done
+[ "$applied" -gt 0 ] || { echo "no patches found in $patch_dir" >&2; exit 1; }
+
+# Our patches change what the package contains, so the release number has to be
+# ours: bumping versions/luci-app-netbird.env must actually produce a higher
+# ipk version, or opkg upgrade on a device would skip it. luci-watch resyncs
+# this file to upstream whenever upstream moves.
+makefile="$source_dir/Makefile"
+if [ -f "$makefile" ]; then
+	sed -i "s|^PKG_RELEASE:=.*|PKG_RELEASE:=$release|" "$makefile"
+else
+	echo "missing $makefile: cannot stamp PKG_RELEASE" >&2
 	exit 1
 fi
-patch -p1 -d "$source_dir" -i "$patch_file" >/dev/null || { echo "patch failed" >&2; exit 1; }
 
 if [ "$patch_only" -eq 1 ]; then
 	echo "patched $source_dir"

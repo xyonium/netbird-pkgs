@@ -98,3 +98,22 @@ MK
   [ "$status" -eq 0 ]
   ls "$TMP/out"/luci-app-netbird_*_all.ipk
 }
+
+@test "applies every patch in the patch directory" {
+  run "$SCRIPT" --source "$SRC" --version 0.1.0 --release 26 \
+    --outdir "$TMP/out" --patch-only
+  [ "$status" -eq 0 ]
+  menu="$SRC/root/usr/share/luci/menu.d/luci-app-netbird.json"
+  [ -f "$menu" ]
+  # 0002 moves the app out of Services and into the VPN category.
+  grep -q '"admin/vpn/netbird"' "$menu"
+  ! grep -q '"admin/services/netbird' "$menu"
+}
+
+@test "stamps our release number over the upstream PKG_RELEASE" {
+  grep -q '^PKG_RELEASE:=26$' "$SRC/Makefile"
+  run "$SCRIPT" --source "$SRC" --version 0.1.0 --release 27 \
+    --outdir "$TMP/out" --patch-only
+  [ "$status" -eq 0 ]
+  grep -q '^PKG_RELEASE:=27$' "$SRC/Makefile"
+}

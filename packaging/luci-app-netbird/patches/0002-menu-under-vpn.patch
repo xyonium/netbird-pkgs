@@ -1,0 +1,63 @@
+--- a/root/usr/share/luci/menu.d/luci-app-netbird.json
++++ b/root/usr/share/luci/menu.d/luci-app-netbird.json
+@@ -1,5 +1,5 @@
+ {
+-	"admin/services/netbird": {
++	"admin/vpn/netbird": {
+ 		"title": "NetBird",
+ 		"order": 45,
+ 		"action": {
+@@ -9,7 +9,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/overview": {
++	"admin/vpn/netbird/overview": {
+ 		"title": "Authentication",
+ 		"order": 10,
+ 		"action": {
+@@ -20,7 +20,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/versions": {
++	"admin/vpn/netbird/versions": {
+ 		"title": "Versions",
+ 		"order": 15,
+ 		"action": {
+@@ -31,7 +31,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/settings": {
++	"admin/vpn/netbird/settings": {
+ 		"title": "Settings",
+ 		"order": 20,
+ 		"action": {
+@@ -42,7 +42,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/status": {
++	"admin/vpn/netbird/status": {
+ 		"title": "Status",
+ 		"order": 30,
+ 		"action": {
+@@ -53,7 +53,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/network": {
++	"admin/vpn/netbird/network": {
+ 		"title": "Network",
+ 		"order": 35,
+ 		"action": {
+@@ -64,7 +64,7 @@
+ 			"acl": [ "luci-app-netbird" ]
+ 		}
+ 	},
+-	"admin/services/netbird/logs": {
++	"admin/vpn/netbird/logs": {
+ 		"title": "Logs",
+ 		"order": 40,
+ 		"action": {
