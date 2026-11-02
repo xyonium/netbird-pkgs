@@ -89,3 +89,11 @@ teardown() { rm -rf "$TMP"; }
   run grep -q 'admin/services/netbird' "$repo/packaging/istore/app-meta-netbird/Makefile.in"
   [ "$status" -eq 1 ]
 }
+
+@test "declares the Chinese i18n package as a dependency" {
+  repo="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  # app-meta-zerotier does the same: the translation is a separate package.
+  run grep -q 'META_DEPENDS:=+netbird +luci-app-netbird +luci-i18n-netbird-zh-cn' \
+    "$repo/packaging/istore/app-meta-netbird/Makefile.in"
+  [ "$status" -eq 0 ]
+}
