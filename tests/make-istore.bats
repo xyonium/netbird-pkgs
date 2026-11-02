@@ -62,3 +62,19 @@ teardown() { rm -rf "$TMP"; }
   [ ! -f "$repo/packaging/istore/app-meta-netbird/Makefile" ]
   [ -f "$repo/packaging/istore/app-meta-netbird/Makefile.in" ]
 }
+
+@test "ships a real, square icon instead of a blank placeholder" {
+  repo="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  logo="$repo/packaging/istore/app-meta-netbird/logo.png"
+  [ -f "$logo" ]
+  size=$(stat -c %s "$logo")
+  [ "$size" -le 51200 ]
+  # A single flat colour compresses to a few hundred bytes; a real icon does not.
+  [ "$size" -gt 1024 ]
+  run file "$logo"
+  [[ "$output" == *"PNG image data"* ]]
+  dims=$(printf '%s' "$output" | sed -n 's/.*PNG image data, \([0-9]\+\) x \([0-9]\+\).*/\1 \2/p')
+  set -- $dims
+  [ "$1" = "$2" ]
+  [ "$1" -ge 64 ]
+}
