@@ -21,9 +21,13 @@
   `admin/vpn` 分类，改动只涉及 `menu.d` 的路径键；ACL 与视图路径不受影响。
 - 上游 `Makefile` 的 `PKG_RELEASE` 会被 `scripts/build-luci-ipk.sh` 覆写为
   `versions/luci-app-netbird.env` 里的 `LUCI_PKG_RELEASE`。**本仓库只要改动了
-  这个包的内容（补丁、许可、菜单），就必须把该值在 upstream 当前值之上 +1**，
-  否则设备 `opkg upgrade` 会认为版本相同而跳过。
-  `luci-watch` 在上游版本变化时会把该文件重新对齐到上游，届时需要人工再 +1。
+  这个包的内容（补丁、许可、菜单），就必须把该值 +1**，否则设备
+  `opkg upgrade` 会认为版本相同而跳过。
+- 该文件里 `LUCI_UPSTREAM_RELEASE` 记录上次同步时上游的 `PKG_RELEASE`。
+  `luci-watch` 调用的 `scripts/update-luci-env.sh` 据此判断上游是否真的动了：
+  没动就原样不动（幂等），动了才把 `LUCI_PKG_RELEASE` 推到
+  `max(本地, 上游) + 1`，**只会前进，不会退回上游的值**；且它按行改写、
+  保留 `LUCI_SDK_*` 等其它字段。
 - 该应用不自带 init，生命周期由本仓库的 `/etc/init.d/netbird` 负责。
 - 其 uci-defaults 会写 `/etc/netbird.env`、创建 `firewall.netbird`、删除
   `network.netbird`、追加 `/etc/sysupgrade.conf`；设备验收覆盖这些副作用。

@@ -1,10 +1,12 @@
 #!/bin/sh
 # shellcheck disable=SC1007,SC2013,SC2015
-# Mirror the upstream luci-app-netbird Makefile version into versions/luci-app-netbird.env.
+# Sync the upstream luci-app-netbird Makefile into versions/luci-app-netbird.env.
 #
-# The package version is whatever the upstream Makefile pins: bumping only our
-# copy of the release number makes the env disagree with the ipk the SDK will
-# actually build, which the release assertion then rejects.
+# Two things this must not do:
+#   - rewrite the whole file, which would drop the pinned SDK fields;
+#   - adopt upstream's PKG_RELEASE, which would walk our own release number
+#     backwards (and below upstream's) so opkg upgrade would skip our build.
+# Our release number only ever moves forward, and only when upstream moves.
 set -eu
 
 LC_ALL=C
@@ -37,11 +39,36 @@ pkg_release=$(sed -n 's/^PKG_RELEASE:=//p' "$makefile" | head -n 1)
 [ -n "$pkg_version" ] && [ -n "$pkg_release" ] \
 	|| { echo "Makefile does not pin PKG_VERSION/PKG_RELEASE: $makefile" >&2; exit 1; }
 
-before=$(cat "$env_file" 2>/dev/null || :)
-printf 'LUCI_VERSION=%s\nLUCI_COMMIT=%s\nLUCI_PKG_RELEASE=%s\n' \
-	"$pkg_version" "$commit" "$pkg_release" > "$env_file"
-if [ "$before" = "$(cat "$env_file")" ]; then
+get() { sed -n "s/^$1=//p" "$env_file" 2>/dev/null | head -n 1; }
+put() {
+	if grep -q "^$1=" "$env_file" 2>/dev/null; then
+		sed -i "s|^$1=.*|$1=$2|" "$env_file"
+	else
+		printf '%s=%s\n' "$1" "$2" >> "$env_file"
+	fi
+}
+
+cur_version=$(get LUCI_VERSION)
+cur_commit=$(get LUCI_COMMIT)
+cur_release=$(get LUCI_PKG_RELEASE)
+cur_upstream=$(get LUCI_UPSTREAM_RELEASE)
+
+if [ "$cur_version" = "$pkg_version" ] && [ "$cur_commit" = "$commit" ] \
+	&& [ "$cur_upstream" = "$pkg_release" ]; then
 	echo "CHANGED=0"
-else
-	echo "CHANGED=1"
+	exit 0
 fi
+
+# Release number: strictly greater than both our previous one and upstream's,
+# so a device running either never considers our build older.
+case "$cur_release" in *[!0-9]*|'') cur_release=0 ;; esac
+case "$pkg_release" in *[!0-9]*|'') pkg_release=0 ;; esac
+next_release=$cur_release
+[ "$pkg_release" -gt "$next_release" ] && next_release=$pkg_release
+next_release=$((next_release + 1))
+
+put LUCI_VERSION "$pkg_version"
+put LUCI_COMMIT "$commit"
+put LUCI_UPSTREAM_RELEASE "$pkg_release"
+put LUCI_PKG_RELEASE "$next_release"
+echo "CHANGED=1"

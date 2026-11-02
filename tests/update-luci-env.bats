@@ -7,7 +7,10 @@ setup() {
   cat > "$ENVFILE" <<'ENV'
 LUCI_VERSION=0.1.0
 LUCI_COMMIT=cd812d93f8ca6c4563b716518c4308f9c448ac2f
-LUCI_PKG_RELEASE=26
+LUCI_PKG_RELEASE=27
+LUCI_SDK_VERSION=24.10.4
+LUCI_SDK_SHA256=229e871f734a2cee5ce3ad6a3e98d3836b0899bfdeaea4d9c2c5cc7b1fce1407
+LUCI_UPSTREAM_RELEASE=26
 ENV
   cat > "$TMP/Makefile" <<'MK'
 include $(TOPDIR)/rules.mk
@@ -23,18 +26,28 @@ MK
 
 teardown() { rm -rf "$TMP"; }
 
-@test "mirrors PKG_VERSION and PKG_RELEASE from the upstream Makefile" {
+@test "keeps the pinned SDK fields when it updates the package version" {
   run "$SCRIPT" --env-file "$ENVFILE" --commit 1111111111111111111111111111111111111111 \
     --makefile "$TMP/Makefile"
   [ "$status" -eq 0 ]
+  grep -qx 'LUCI_SDK_VERSION=24.10.4' "$ENVFILE"
+  grep -qx 'LUCI_SDK_SHA256=229e871f734a2cee5ce3ad6a3e98d3836b0899bfdeaea4d9c2c5cc7b1fce1407' "$ENVFILE"
   grep -qx 'LUCI_VERSION=0.2.0' "$ENVFILE"
-  grep -qx 'LUCI_PKG_RELEASE=3' "$ENVFILE"
   grep -qx 'LUCI_COMMIT=1111111111111111111111111111111111111111' "$ENVFILE"
+  grep -qx 'LUCI_UPSTREAM_RELEASE=3' "$ENVFILE"
+}
+
+@test "moves our release number forward instead of adopting upstream's" {
+  run "$SCRIPT" --env-file "$ENVFILE" --commit 1111111111111111111111111111111111111111 \
+    --makefile "$TMP/Makefile"
+  [ "$status" -eq 0 ]
+  # ours was 27, upstream says 3: never go backwards, and stay above upstream
+  grep -qx 'LUCI_PKG_RELEASE=28' "$ENVFILE"
 }
 
 @test "is idempotent so a re-run does not drift the release number" {
   "$SCRIPT" --env-file "$ENVFILE" --commit 1111111111111111111111111111111111111111 \
-    --makefile "$TMP/Makefile"
+    --makefile "$TMP/Makefile" >/dev/null
   first=$(cat "$ENVFILE")
   run "$SCRIPT" --env-file "$ENVFILE" --commit 1111111111111111111111111111111111111111 \
     --makefile "$TMP/Makefile"
