@@ -6,3 +6,4 @@ tools/
 *.ipk
 *.log
 out/
+.research/
