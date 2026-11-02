@@ -34,13 +34,40 @@ jobs:
         run: |
           set -eu
           scripts/install-test-deps.sh
-      - name: Validate
+      - name: Validate this repository
         run: make lint test
+      # The PR this job opens is the only human gate on a package that runs as
+      # root, and GITHUB_TOKEN-created PRs never trigger CI, so the new upstream
+      # commit has to be built and verified here. The conclusion goes into the
+      # PR body; a failure is reported, not hidden, and never auto-merged.
+      - name: Validate the new upstream commit
+        id: build
+        if: steps.resolve.outputs.CHANGED == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT: ${{ steps.resolve.outputs.COMMIT }}
+        continue-on-error: true
+        run: |
+          set -eu
+          . versions/luci-app-netbird.env
+          scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
+            --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"
+          scripts/validate-luci-update.sh --sdk "$RUNNER_TEMP/sdk" \
+            --workdir "$RUNNER_TEMP/validate" --summary "$RUNNER_TEMP/summary.md" \
+            --commit "$COMMIT"
+      - name: Note a failed build
+        if: steps.resolve.outputs.CHANGED == '1' && steps.build.outcome != 'success'
+        run: |
+          set -eu
+          f="$RUNNER_TEMP/summary.md"
+          [ -f "$f" ] || printf '## LuCI build validation\n\n**FAILED** — the SDK build did not produce a summary.\n' > "$f"
+          printf '\n> This PR must not be merged until the build above passes.\n' >> "$f"
       - name: Open PR
         if: steps.resolve.outputs.CHANGED == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMIT: ${{ steps.resolve.outputs.COMMIT }}
+          OUTCOME: ${{ steps.build.outcome }}
         run: |
           set -eu
           branch="luci-update-${COMMIT}"
@@ -59,6 +86,20 @@ jobs:
           git add versions/luci-app-netbird.env
           git commit -m "chore(luci): update luci-app-netbird to ${COMMIT}"
           git push origin "$branch"
+          # Quoted heredocs keep the markdown backticks literal, and the
+          # commit is substituted afterwards so nothing needs escaping.
+          {
+            cat <<'HEADER'
+          Upstream `luci-app-netbird` commit `@@COMMIT@@`.
+          HEADER
+            cat "$RUNNER_TEMP/summary.md"
+            cat <<'FOOTER'
+
+          ---
+
+          Review the diff, then merge. Merging bumps `versions/luci-app-netbird.env`;
+          the next release build picks it up.
+          FOOTER
+          } | sed "s|@@COMMIT@@|$COMMIT|" > /tmp/pr-body.md
           gh pr create --title "chore(luci): update to ${COMMIT}" \
-            --body "Upstream luci-app-netbird commit ${COMMIT}. Requires manual review and merge." \
-            --base main --head "$branch"
+            --body-file /tmp/pr-body.md --base main --head "$branch"

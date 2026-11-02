@@ -198,3 +198,38 @@ setup() {
   run grep -q 'git clone' "$script"
   [ "$status" -eq 1 ]
 }
+
+@test "luci-watch builds the new commit before opening its PR" {
+  run grep -q 'scripts/validate-luci-update.sh' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'scripts/install-openwrt-sdk.sh' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "luci-watch puts the build conclusion into the PR body" {
+  run grep -q 'body-file' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+  run grep -q 'summary.md' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "luci-watch still never merges on its own" {
+  run grep -qE 'gh pr merge|--auto|gh api .*merge' "$WF/luci-watch.yml"
+  [ "$status" -eq 1 ]
+}
+
+@test "the LuCI build uses the shared SDK installer in every workflow" {
+  for wf in "$WF"/*.yml; do
+    grep -q 'luci-app-netbird' "$wf" || continue
+    grep -q 'SDK' "$wf" || continue
+    run grep -q 'scripts/install-openwrt-sdk.sh' "$wf"
+    [ "$status" -eq 0 ]
+    echo "checked $wf"
+  done
+}
+
+@test "every luci-watch step that calls gh api can authenticate" {
+  # gh needs GH_TOKEN; the validate step downloads the tarball too.
+  run bash -c "awk '/- name: Validate the new upstream commit/,/- name: Note a failed build/' '$WF/luci-watch.yml' | grep -c 'GH_TOKEN'"
+  [ "$output" -ge 1 ]
+}

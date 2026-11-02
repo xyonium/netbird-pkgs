@@ -113,18 +113,8 @@ jobs:
         run: |
           set -eu
           . versions/luci-app-netbird.env
-          base="https://downloads.openwrt.org/releases/${LUCI_SDK_VERSION}/targets/x86/64"
-          tarball="openwrt-sdk-${LUCI_SDK_VERSION}-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-          curl -fsSL "${base}/${tarball}" -o /tmp/sdk.tar.zst
-          echo "${LUCI_SDK_SHA256}  /tmp/sdk.tar.zst" | sha256sum -c -
-          rm -rf "$RUNNER_TEMP/sdk"
-          mkdir -p "$RUNNER_TEMP/sdk"
-          tar --zstd -xf /tmp/sdk.tar.zst -C "$RUNNER_TEMP/sdk" --strip-components=1
-          # A bare SDK ships no feeds, and luci-app-netbird includes feeds/luci/luci.mk.
-          # luci-base provides the po2lmo host tool the i18n subpackage compiles with.
-          cd "$RUNNER_TEMP/sdk"
-          ./scripts/feeds update -a >/dev/null
-          ./scripts/feeds install luci-base >/dev/null
+          scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
+            --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"
           echo "SDK_DIR=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
       - name: Build LuCI ipk
         run: |

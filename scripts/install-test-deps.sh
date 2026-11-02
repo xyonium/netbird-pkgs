@@ -12,7 +12,7 @@ prefix=${PREFIX:-/usr/local/bin}
 USIGN_COMMIT=c4c72b1b07945ee192361dc751291a7c98d6adcd
 
 sudo apt-get update
-sudo apt-get install -y bats shellcheck cmake build-essential
+sudo apt-get install -y bats shellcheck cmake build-essential zstd
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
@@ -28,4 +28,4 @@ command -v go >/dev/null 2>&1 || {
 	echo "go is required: the bats fixtures build Go binaries (e2e, verify-ipk)" >&2
 	exit 1
 }
-echo "test dependencies ready: bats, shellcheck, usign, go"
+echo "test dependencies ready: bats, shellcheck, usign, zstd, go"
