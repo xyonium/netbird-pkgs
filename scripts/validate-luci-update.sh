@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=SC1007,SC2013,SC2015
+# shellcheck disable=SC1007,SC2013,SC2015,SC2016
 # Validate a candidate luci-app-netbird commit by building it for real.
 #
 # This is the signal for the one human gate in the pipeline: the package runs

@@ -45,7 +45,7 @@ teardown() { rm -rf "$TMP"; }
   [[ "$output" == *"PKG_VERSION:=0.82.0"* ]]
   [[ "$output" == *"PKG_RELEASE:=1"* ]]
   [[ "$output" == *"META_DEPENDS:=+netbird +luci-app-netbird"* ]]
-  [[ "$output" == *"META_LUCI_ENTRY:=/cgi-bin/luci/admin/services/netbird"* ]]
+  [[ "$output" == *"META_LUCI_ENTRY:=/cgi-bin/luci/admin/vpn/netbird"* ]]
   [ "$(stat -c %s "$OUT/applications/app-meta-netbird/logo.png")" -le 51200 ]
 }
 
@@ -77,4 +77,15 @@ teardown() { rm -rf "$TMP"; }
   set -- $dims
   [ "$1" = "$2" ]
   [ "$1" -ge 64 ]
+}
+
+@test "the store entry points at the VPN menu the package actually installs" {
+  # Patch 0002 moves the menu to admin/vpn/netbird; the store metadata must
+  # not keep pointing at the old Services path.
+  repo="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  run grep -q 'META_LUCI_ENTRY:=/cgi-bin/luci/admin/vpn/netbird$' \
+    "$repo/packaging/istore/app-meta-netbird/Makefile.in"
+  [ "$status" -eq 0 ]
+  run grep -q 'admin/services/netbird' "$repo/packaging/istore/app-meta-netbird/Makefile.in"
+  [ "$status" -eq 1 ]
 }
