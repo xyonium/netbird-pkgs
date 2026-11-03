@@ -34,8 +34,15 @@ append_env_from_file() {
 		esac
 		key=${line%%=*}
 		val=${line#*=}
+		# Logging/certs, plus the upstream routing escape hatches. NetBird
+		# installs a global `ip rule ... suppress_prefixlen 0`, which makes every
+		# other policy-routing user on the box (passwall, mwan3, ...) lose the
+		# default route; NB_USE_LEGACY_ROUTING is how upstream says to avoid that.
+		# Path-controlling variables stay out: they would let this file redirect
+		# the daemon's state or config.
 		case "$key" in
 			NB_LOG_FILE|NB_LOG_LEVEL|SSL_CERT_FILE) ;;
+			NB_USE_LEGACY_ROUTING|NB_FWMARK_BASE|NB_DISABLE_CUSTOM_ROUTING) ;;
 			*) continue ;;
 		esac
 		val=${val%\"}

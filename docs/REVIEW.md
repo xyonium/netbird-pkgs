@@ -8,7 +8,20 @@
    保持 `/var/lib/netbird/state.json`（可重建的运行态）。
 3. 增加 `procd_set_param respawn 3600 5 5`（上游未设置）。
 4. 解析 `/etc/netbird.env` 的白名单变量（`NB_LOG_FILE`、`NB_LOG_LEVEL`、
-   `SSL_CERT_FILE`），**不 source**，避免 root 执行任意 shell。
+   `SSL_CERT_FILE`，以及上游的路由逃生开关 `NB_USE_LEGACY_ROUTING`、
+   `NB_FWMARK_BASE`、`NB_DISABLE_CUSTOM_ROUTING`），**不 source**，避免 root
+   执行任意 shell。改动状态/配置路径的变量（`NB_STATE_DIR`、`NB_CONFIG`、
+   `NB_DNS_STATE_FILE`）仍被拒绝。
+
+   **为什么放行这三个**：NetBird 启用「高级路由」时会装一条全局规则
+   `ip rule add priority 105 lookup main suppress_prefixlen 0`，它的语义是
+   「查 main 表时忽略所有 /0 路由」，也就是**让整机所有流量都不再使用默认路由**
+   （netbird 自己的规则 110 再把它们接进 `netbird` 表）。这条规则**不区分流量来自
+   谁**，所以同机上依赖默认路由出网的其它策略路由软件（passwall/xray、mwan3 等）
+   会一起失联：具体网段的直连仍然通，需要走默认路由的代理则不通。
+   `NB_USE_LEGACY_ROUTING` 是上游为此准备的回退开关（改走 exclusion route，
+   不碰全局 ip rule）；`NB_FWMARK_BASE` 用于把 fwmark 段挪开其它 VPN 的占用。
+   既往版本把这三个变量过滤掉了，用户在 `/etc/netbird.env` 里写了也**不生效**。
 5. 不启用 `service_triggers`：wan 抖动时反复重启反而加剧断连。
 
 ## luci-app-netbird（Apache-2.0）
