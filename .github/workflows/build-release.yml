@@ -153,7 +153,10 @@ jobs:
         run: |
           set -eu
           . versions/netbird.env
-          echo "SOURCE_DATE_EPOCH=$(scripts/source-date-epoch.sh --env-file versions/netbird.env)" >> "$GITHUB_ENV"
+          # Must be exported in this step, not written to $GITHUB_ENV: that only
+          # applies to later steps, and the very next command needs it.
+          SOURCE_DATE_EPOCH=$(scripts/source-date-epoch.sh --env-file versions/netbird.env)
+          export SOURCE_DATE_EPOCH
           curl -fsSL "https://codeload.github.com/netbirdio/netbird/tar.gz/v${NETBIRD_VERSION}" -o /tmp/src.tar.gz
           mkdir -p src
           tar -xzf /tmp/src.tar.gz -C src --strip-components=1

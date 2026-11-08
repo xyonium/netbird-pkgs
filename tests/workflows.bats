@@ -233,3 +233,28 @@ setup() {
   run bash -c "awk '/- name: Validate the new upstream commit/,/- name: Note a failed build/' '$WF/luci-watch.yml' | grep -c 'GH_TOKEN'"
   [ "$output" -ge 1 ]
 }
+
+@test "no step reads a variable it only wrote to GITHUB_ENV" {
+  # $GITHUB_ENV takes effect for LATER steps only. Writing a variable there and
+  # then reading it in the same step silently yields an empty value. This is
+  # exactly how the weekly repro job rotted: it is schedule-only, so no PR CI
+  # ever ran it, and the release pipeline stayed red for a week.
+  for wf in "$WF"/*.yml; do
+    run awk '
+      /^      - / { step++; delete w; next }
+      />>[ ]*"\$GITHUB_ENV"/ {
+        if (match($0, /[A-Z_][A-Z0-9_]*=/)) { w[substr($0, RSTART, RLENGTH-1)]=1 }
+      }
+      {
+        for (v in w) if (index($0, "$" v) > 0 && index($0, v "=") == 0) {
+          bad[v]=1; badstep[v]=step
+        }
+      }
+      END {
+        for (v in bad) printf "step %s reads %s after only writing it to GITHUB_ENV\n", badstep[v], v
+        exit (length(bad) > 0)
+      }
+    ' "$wf"
+    [ "$status" -eq 0 ] || { echo "violation in $wf: $output"; return 1; }
+  done
+}
