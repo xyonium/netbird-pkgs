@@ -41,11 +41,23 @@ fi
 # with "Build dependency: Please install GNU 'install'". The GNU provider does
 # not exist on older releases, where coreutils itself is already GNU.
 if apt-cache show coreutils-from-gnu >/dev/null 2>&1; then
-	if [ "$(id -u)" -eq 0 ]; then
-		apt-get install -y --no-install-recommends coreutils-from-gnu
-	else
-		sudo apt-get install -y --no-install-recommends coreutils-from-gnu
-	fi
+	# The providers conflict with each other, so apt will not swap one for the
+	# other on its own: name the installed one for removal with a trailing "-".
+	drop=
+	for p in coreutils-from-uutils coreutils-from-busybox coreutils-from-toybox; do
+		if dpkg -s "$p" >/dev/null 2>&1; then
+			drop="$drop $p-"
+		fi
+	done
+	run_apt() {
+		if [ "$(id -u)" -eq 0 ]; then
+			apt-get "$@"
+		else
+			sudo apt-get "$@"
+		fi
+	}
+	# shellcheck disable=SC2086
+	run_apt install -y --no-install-recommends coreutils-from-gnu $drop
 fi
 
 # Same test the SDK runs.
