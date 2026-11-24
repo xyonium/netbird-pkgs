@@ -63,6 +63,10 @@ jobs:
           f="$RUNNER_TEMP/summary.md"
           [ -f "$f" ] || printf '## LuCI build validation\n\n**FAILED** — the SDK build did not produce a summary.\n' > "$f"
           printf '\n> This PR must not be merged until the build above passes.\n' >> "$f"
+          # The summary is the only place the reason is recorded; the PR that
+          # would carry it may never be created, so put it in the log too.
+          echo "::error::the candidate build failed; summary follows"
+          cat "$f"
       - name: Open PR
         if: steps.resolve.outputs.CHANGED == '1'
         env:
@@ -86,7 +90,10 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add versions/luci-app-netbird.env
           git commit -m "chore(luci): update luci-app-netbird to ${COMMIT}"
-          git push origin "$branch"
+          # The branch is owned by this job and named after the upstream commit,
+          # so a previous run that died before opening its PR leaves a stale
+          # branch behind. Replace it rather than failing on non-fast-forward.
+          git push --force origin "$branch"
           # Quoted heredocs keep the markdown backticks literal, and the
           # commit is substituted afterwards so nothing needs escaping.
           {

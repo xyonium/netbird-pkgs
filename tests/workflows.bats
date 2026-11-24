@@ -306,3 +306,17 @@ setup() {
   run grep -q 'allow-remove-essential' "$script"
   [ "$status" -eq 0 ]
 }
+
+@test "luci-watch replaces its own stale branch and prints a failed summary" {
+  # A run that dies before opening its PR leaves the branch behind, and the same
+  # branch name comes back next time; without --force every later run fails on
+  # non-fast-forward. And when the candidate build fails, the reason lives only
+  # in the summary file, so it must reach the log.
+  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"git push --force origin"* ]]
+
+  run bash -c "awk '/Note a failed build/,/Open PR/' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'cat "$f"'* ]]
+}
