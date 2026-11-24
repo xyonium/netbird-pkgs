@@ -128,8 +128,10 @@ jobs:
       - name: Verify the SDK's own prerequisites
         run: |
           set -eu
-          cd "$SDK_DIR"
-          if ! make -j1 -r -s -f include/prereq-build.mk prereq >/tmp/prereq.out 2>&1; then
+          # TOPDIR is normally provided by toplevel.mk; invoking the check
+          # directly means supplying it, or rules.mk cannot be found.
+          if ! make -C "$SDK_DIR" TOPDIR="$SDK_DIR" -j1 -r -s \
+              -f include/prereq-build.mk prereq >/tmp/prereq.out 2>&1; then
             echo "::error::the SDK host prerequisite check failed; its output follows"
             cat /tmp/prereq.out
             exit 1
