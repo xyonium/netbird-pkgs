@@ -124,8 +124,10 @@ jobs:
 
           ---
 
-          Review the diff, then merge. Merging bumps `versions/luci-app-netbird.env`;
-          the next release build picks it up.
+          Merged automatically by this workflow: the build above passed, so the
+          PR is squash-merged, `versions/netbird.env` gets a new package release,
+          and `build-release` is dispatched to publish it. The PR is kept as the
+          audit trail for what shipped.
           FOOTER
           } | sed "s|@@COMMIT@@|$COMMIT|" > /tmp/pr-body.md
           if [ -n "$existing" ]; then

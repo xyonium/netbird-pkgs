@@ -345,3 +345,12 @@ setup() {
   [[ "$output" == *'--state all'* ]]
   [[ "$output" == *"was closed without merging"* ]]
 }
+
+@test "the PR body describes what actually happens, not a manual merge" {
+  # The PR is merged by the workflow itself; telling a human to "review and
+  # merge" would be a lie that outlives the change.
+  run bash -c "awk '/Merge the update and cut a release/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Merged automatically by this workflow"* ]]
+  [[ "$output" != *"Review the diff, then merge"* ]]
+}
