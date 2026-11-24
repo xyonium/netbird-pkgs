@@ -122,6 +122,19 @@ jobs:
           scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
             --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"
           echo "SDK_DIR=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
+      # The SDK runs this check with 2>/dev/null, so a failing host dependency
+      # surfaces only as "Prerequisite check failed" with no reason. Run it here
+      # with its output intact.
+      - name: Verify the SDK's own prerequisites
+        run: |
+          set -eu
+          cd "$SDK_DIR"
+          if ! make -j1 -r -s -f include/prereq-build.mk prereq >/tmp/prereq.out 2>&1; then
+            echo "::error::the SDK host prerequisite check failed; its output follows"
+            cat /tmp/prereq.out
+            exit 1
+          fi
+          echo "SDK host prerequisites satisfied"
       - name: Build LuCI ipk
         run: |
           set -eu
