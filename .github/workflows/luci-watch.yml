@@ -49,6 +49,7 @@ jobs:
         continue-on-error: true
         run: |
           set -eu
+          scripts/install-sdk-deps.sh
           . versions/luci-app-netbird.env
           scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
             --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"

@@ -109,6 +109,12 @@ jobs:
           mkdir -p luci-app-netbird
           cp -a /tmp/luci-src/luci-app-netbird/. luci-app-netbird/
           cp /tmp/LICENSE /tmp/NOTICE luci-app-netbird/
+      # Never inherit these from the image: ubuntu-latest moved to 26.04 and
+      # stopped shipping libncurses-dev, which failed this job silently.
+      - name: Install SDK host dependencies
+        run: |
+          set -eu
+          scripts/install-sdk-deps.sh
       - name: Install pinned OpenWrt SDK
         run: |
           set -eu

@@ -258,3 +258,33 @@ setup() {
     [ "$status" -eq 0 ] || { echo "violation in $wf: $output"; return 1; }
   done
 }
+
+@test "the SDK build job installs the SDK's host prerequisites" {
+  # .prereq-build needs ncurses.h and the SDK's conf tool needs pkg-config.
+  # ubuntu-latest moved from 24.04 to 26.04 between 2026-11-09 and 2026-11-23
+  # and stopped shipping libncurses-dev, which broke build-luci with a message
+  # the CI log renders as nothing. Do not rely on the image; install them.
+  run bash -c "awk '/^  build-luci:\$/,/^  repro:\$/' '$WF/build-release.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"scripts/install-sdk-deps.sh"* ]]
+}
+
+@test "luci-watch installs the SDK prerequisites before validating" {
+  # Same SDK, same .prereq-build; it broke here too on 2026-11-16 and 11-23.
+  run bash -c "awk '/Validate the new upstream commit/,/Note a failed build/' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"scripts/install-sdk-deps.sh"* ]]
+}
+
+@test "the SDK dependency script installs and self-checks what the SDK needs" {
+  script="$BATS_TEST_DIRNAME/../scripts/install-sdk-deps.sh"
+  run grep -q 'libncurses-dev' "$script"
+  [ "$status" -eq 0 ]
+  run grep -q 'pkg-config' "$script"
+  [ "$status" -eq 0 ]
+  # It must verify, not just install; a silent miss is what cost a week of red.
+  run grep -q 'ncurses.h' "$script"
+  [ "$status" -eq 0 ]
+  run grep -q 'pkg-config --exists' "$script"
+  [ "$status" -eq 0 ]
+}
