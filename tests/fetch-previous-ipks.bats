@@ -94,3 +94,27 @@ release_ipk() {
   run "$SCRIPT"
   [ "$status" -eq 2 ]
 }
+
+@test "retains distinct upstream versions, not just the last N releases" {
+  # A LuCI-only update mints a new release on the same netbird version. Counting
+  # releases would let a few of those evict the previous upstream version from
+  # the feed, breaking the documented rollback path.
+  export STUB="$TMP"
+  for t in v0.83.2-r5 v0.83.2-r4 v0.83.2-r3 v0.83.1-r1 v0.82.0-r1; do
+    printf 'netbird_%s_aarch64_generic.ipk\n' "${t#v}" > "$TMP/releases/$t.assets"
+    : > "$TMP/releases/$t.ipk.netbird_${t#v}_aarch64_generic.ipk"
+  done
+  run env RELEASES="v0.83.2-r5
+v0.83.2-r4
+v0.83.2-r3
+v0.83.1-r1
+v0.82.0-r1" "$SCRIPT" --dir "$TMP/prev" --limit 2 \
+    --exclude v0.83.2-r5
+  [ "$status" -eq 0 ]
+  # One release per distinct version, current version excluded.
+  [ -f "$TMP/prev/netbird_0.83.1-r1_aarch64_generic.ipk" ]
+  [ -f "$TMP/prev/netbird_0.82.0-r1_aarch64_generic.ipk" ]
+  # The older releases of the version being published must not take a slot.
+  [ ! -f "$TMP/prev/netbird_0.83.2-r4_aarch64_generic.ipk" ]
+  [ ! -f "$TMP/prev/netbird_0.83.2-r3_aarch64_generic.ipk" ]
+}

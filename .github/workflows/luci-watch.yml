@@ -2,17 +2,23 @@ name: luci-watch
 
 on:
   schedule:
-    - cron: "0 3 * * 1"
+    # Staggered from upstream-watch (0 3 * * 1): both touch versions/ on main,
+    # and running them at the same moment makes one of them lose a push race.
+    - cron: "30 3 * * 1"
   workflow_dispatch:
 
+# The candidate build runs an untrusted upstream Makefile, so the read-only
+# default lives here and the write permissions are granted per-job below.
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  watch:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      changed: ${{ steps.resolve.outputs.CHANGED }}
+      commit: ${{ steps.resolve.outputs.COMMIT }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -37,44 +43,58 @@ jobs:
           scripts/install-test-deps.sh
       - name: Validate this repository
         run: make lint test
-      # The PR this job opens is the only human gate on a package that runs as
-      # root, and GITHUB_TOKEN-created PRs never trigger CI, so the new upstream
-      # commit has to be built and verified here. The conclusion goes into the
-      # PR body; a failure is reported, not hidden, and never auto-merged.
-      - name: Validate the new upstream commit
-        id: build
+      # Everything from here to the upload runs code from the upstream project.
+      # This job holds no write permission, so a compromised upstream commit can
+      # at worst fail the build.
+      - name: Build the candidate with the real SDK
         if: steps.resolve.outputs.CHANGED == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMIT: ${{ steps.resolve.outputs.COMMIT }}
-        continue-on-error: true
         run: |
           set -eu
           scripts/install-sdk-deps.sh
           . versions/luci-app-netbird.env
           scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
             --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"
-          scripts/validate-luci-update.sh --sdk "$RUNNER_TEMP/sdk" \
-            --sdk-version "$LUCI_SDK_VERSION" \
-            --workdir "$RUNNER_TEMP/validate" --summary "$RUNNER_TEMP/summary.md" \
-            --commit "$COMMIT"
-      # Nothing to review, nothing to merge: say why and stop. A red run is the
-      # only signal the maintainer wants from this workflow.
-      - name: Fail on a broken candidate
-        if: steps.resolve.outputs.CHANGED == '1' && steps.build.outcome != 'success'
-        run: |
-          set -eu
-          f="$RUNNER_TEMP/summary.md"
-          [ -f "$f" ] || printf '## LuCI build validation\n\n**FAILED** — the SDK build did not produce a summary.\n' > "$f"
-          cat "$f"
-          echo "::error::the candidate build failed; it was not merged and no release was cut"
-          exit 1
+          if ! scripts/validate-luci-update.sh --sdk "$RUNNER_TEMP/sdk" \
+              --sdk-version "$LUCI_SDK_VERSION" \
+              --workdir "$RUNNER_TEMP/validate" --summary "$RUNNER_TEMP/summary.md" \
+              --commit "$COMMIT"; then
+            cat "$RUNNER_TEMP/summary.md" || true
+            echo "::error::the candidate build failed; nothing was merged and no release was cut"
+            exit 1
+          fi
+      - name: Upload the build conclusion
+        if: steps.resolve.outputs.CHANGED == '1'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: luci-summary
+          path: ${{ runner.temp }}/summary.md
+          if-no-files-found: error
+
+  publish:
+    needs: validate
+    if: needs.validate.outputs.changed == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: luci-summary
+          path: ${{ runner.temp }}
+      # No upstream code runs in this job; it only moves the two version files.
       - name: Merge the update and cut a release
-        if: steps.resolve.outputs.CHANGED == '1' && steps.build.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMIT: ${{ steps.resolve.outputs.COMMIT }}
-          OUTCOME: success
+          COMMIT: ${{ needs.validate.outputs.commit }}
         run: |
           set -eu
           branch="luci-update-${COMMIT}"

@@ -34,7 +34,22 @@ case "$limit" in
 esac
 mkdir -p "$dir"
 
-tags=$(gh release list --limit "$limit" --json tagName --jq '.[].tagName')
+# A LuCI-only update mints a new release on the same netbird version, so counting
+# releases would let a few of those push the previous upstream version out of the
+# feed -- make-feed.sh retains versions, not releases. Select by distinct version.
+exclude_version=${exclude#v}
+exclude_version=${exclude_version%-r*}
+tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | awk -v n="$limit" -v skip="$exclude_version" '
+	{
+		v = $0
+		sub(/^v/, "", v)
+		sub(/-r[0-9]+$/, "", v)
+		if (v == skip) next
+		if (v in seen) next
+		seen[v] = 1
+		print $0
+		if (++count >= n) exit
+	}')
 for tag in $tags; do
 	[ -z "$exclude" ] || [ "$tag" != "$exclude" ] || continue
 	assets=$(gh release view "$tag" --json assets --jq '.assets[].name' || exit 1)

@@ -16,7 +16,9 @@
 - 全部 `uses:` 钉完整 SHA；默认 `permissions: contents: read`，按 job 提权。
 - 源码 tarball sha256、`GOFLAGS=-mod=readonly`、Go sumdb、`GOTOOLCHAIN=local`。
 - `-trimpath -buildvcs=false`、固定 `SOURCE_DATE_EPOCH`；CI 夜间双构建比对。
-- `luci-app-netbird` 版本必须人工合并 PR；`binary_source` 默认 `opkg`。
+- `luci-app-netbird` 版本跟随上游，但合并前必须通过真实 SDK 构建；`binary_source` 默认 `opkg`。
+  该构建执行上游 `Makefile`（任意代码），因此它与有写权限的合并步骤**分属两个 job**：构建 job 只有
+  `contents: read`，合并 job 不执行上游代码。合并 job 只允许改动两个版本文件，否则中止。
 - 签名私钥仅存 `release` environment secret；公钥与指纹公示。
 - 发布附 SLSA provenance 与 `SHA256SUMS`。
 

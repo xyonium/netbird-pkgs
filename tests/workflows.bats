@@ -123,7 +123,9 @@ setup() {
 @test "the rollback fetch fails the release instead of silently dropping versions" {
   run grep -q 'scripts/fetch-previous-ipks.sh' "$WF/build-release.yml"
   [ "$status" -eq 0 ]
-  run bash -c "grep 'gh release download' '$WF/build-release.yml' | grep -c '|| true'"
+  # The rollback fetch must not swallow failures. Assert on the step that calls
+  # it, not on a string that no longer appears anywhere in the file.
+  run bash -c "grep -A2 'scripts/fetch-previous-ipks.sh' '$WF/build-release.yml' | grep -c '|| true'"
   [ "$status" -eq 1 ]
 }
 
@@ -225,9 +227,24 @@ setup() {
 }
 
 @test "every luci-watch step that calls gh api can authenticate" {
-  # gh needs GH_TOKEN; the validate step downloads the tarball too.
-  run bash -c "awk '/- name: Validate the new upstream commit/,/- name: Note a failed build/' '$WF/luci-watch.yml' | grep -c 'GH_TOKEN'"
-  [ "$output" -ge 1 ]
+  # gh needs GH_TOKEN. Check each step block rather than a range, so renaming or
+  # adding a step cannot silently make this pass.
+  d=$(mktemp -d)
+  cat > "$d/check.awk" <<'AWK'
+/^      - name:/ {
+  if (name != "" && api && !token) { print "MISSING GH_TOKEN: " name; bad = 1 }
+  name = $0; api = 0; token = 0; next
+}
+/gh api/ { api = 1 }
+/GH_TOKEN/ { token = 1 }
+END {
+  if (name != "" && api && !token) { print "MISSING GH_TOKEN: " name; bad = 1 }
+  exit bad ? 1 : 0
+}
+AWK
+  run awk -f "$d/check.awk" "$WF/luci-watch.yml"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
 }
 
 @test "no step reads a variable it only wrote to GITHUB_ENV" {
@@ -267,7 +284,7 @@ setup() {
 
 @test "luci-watch installs the SDK prerequisites before validating" {
   # Same SDK, same .prereq-build; it broke here too on 2026-11-16 and 11-23.
-  run bash -c "awk '/Validate the new upstream commit/,/Note a failed build/' '$WF/luci-watch.yml'"
+  run bash -c "awk '/Build the candidate with the real SDK/,/Upload the build conclusion/' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"scripts/install-sdk-deps.sh"* ]]
 }
@@ -312,9 +329,10 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"git push --force origin"* ]]
 
-  run bash -c "awk '/Fail on a broken candidate/,/Merge the update/' '$WF/luci-watch.yml'"
+  run bash -c "awk '/Build the candidate with the real SDK/,/- name: Upload the build conclusion/' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'cat "$f"'* ]]
+  [[ "$output" == *'cat "$RUNNER_TEMP/summary.md"'* ]]
+  [[ "$output" == *"exit 1"* ]]
 }
 
 @test "luci-watch refreshes an existing PR instead of skipping it" {
@@ -353,4 +371,68 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Merged automatically by this workflow"* ]]
   [[ "$output" != *"Review the diff, then merge"* ]]
+}
+
+@test "luci-watch keeps the untrusted build away from write permissions" {
+  # The candidate build runs an upstream Makefile, which is arbitrary code. If it
+  # shared a job with the merge, a compromised upstream commit could push, merge
+  # and dispatch a signed release. The jobs must stay split.
+  run bash -c "awk '/^permissions:/,/^jobs:/' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"contents: read"* ]]
+  [[ "$output" != *"contents: write"* ]]
+  [[ "$output" != *"actions: write"* ]]
+
+  # The job that runs upstream code must not declare (or inherit) write access.
+  run bash -c "awk '/^  validate:/,/^  publish:/' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"make -C"* || "$output" == *"validate-luci-update.sh"* ]]
+  [[ "$output" != *"contents: write"* ]]
+  [[ "$output" != *"actions: write"* ]]
+
+  run bash -c "awk '/^  publish:/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"contents: write"* ]]
+  [[ "$output" == *"actions: write"* ]]
+  # and it must not run a build at all
+  [[ "$output" != *"make -C"* ]]
+  [[ "$output" != *"validate-luci-update.sh"* ]]
+}
+
+@test "luci-watch merges automatically once the build passed" {
+  run bash -c "awk '/^  publish:/,0' '$WF/luci-watch.yml'"
+  [[ "$output" == *"gh pr merge"* ]]
+  [[ "$output" == *"--squash"* ]]
+  # a failed candidate never reaches this job
+  [[ "$output" == *"needs: validate"* ]]
+}
+
+@test "the merge job only runs when the candidate actually changed and built" {
+  run grep -A2 '^  publish:' "$WF/luci-watch.yml"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"needs: validate"* ]]
+  run grep -A3 '^  publish:' "$WF/luci-watch.yml"
+  [[ "$output" == *"needs.validate.outputs.changed == '1'"* ]]
+}
+
+@test "an unattended merge is limited to the two version files" {
+  run bash -c "awk '/^  publish:/,0' '$WF/luci-watch.yml'"
+  [[ "$output" == *"unexpected change set"* ]]
+  [[ "$output" == *"versions/luci-app-netbird.env versions/netbird.env"* ]]
+}
+
+@test "luci-watch cuts a release after merging, or the change never ships" {
+  # sign-publish leaves an existing tag alone, so merging the env publishes
+  # nothing; the package only reaches the feed through a new release.
+  run bash -c "awk '/^  publish:/,0' '$WF/luci-watch.yml'"
+  [[ "$output" == *"bump-netbird-release.sh"* ]]
+  [[ "$output" == *"gh workflow run build-release.yml"* ]]
+}
+
+@test "luci-watch and upstream-watch do not run at the same moment" {
+  # Both write versions/ on main; a shared start time makes one lose the race.
+  a=$(grep -oE 'cron: "[^"]*"' "$WF/upstream-watch.yml" | head -1)
+  b=$(grep -oE 'cron: "[^"]*"' "$WF/luci-watch.yml" | head -1)
+  [ -n "$a" ] && [ -n "$b" ]
+  [ "$a" != "$b" ]
 }
