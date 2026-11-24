@@ -150,3 +150,12 @@ MK
   [ "$status" -eq 1 ]
   grep -q 'LICENSE' "$TMP/s.md"
 }
+
+@test "reports the SDK version when given one" {
+  mkdir -p "$TMP/up"
+  cp -a "$SRC/." "$TMP/up/"
+  run "$SCRIPT" --workdir "$TMP/w" --summary "$TMP/s.md" \
+    --source "$TMP/up" --sdk-version "24.10.4" --prepare-only
+  [ "$status" -eq 0 ]
+  grep -q '24.10.4' "$TMP/s.md"
+}

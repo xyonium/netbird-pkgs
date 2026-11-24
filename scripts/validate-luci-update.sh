@@ -17,7 +17,8 @@ export LC_ALL TZ
 usage() {
 	cat >&2 <<'EOF'
 usage: validate-luci-update.sh --sdk <dir> --workdir <dir> --summary <file>
-         (--commit <sha> | --source <dir>) [--repo owner/name] [--prepare-only]
+         (--commit <sha> | --source <dir>) [--repo owner/name] [--sdk-version <v>]
+         [--prepare-only]
 EOF
 	exit 2
 }
@@ -32,6 +33,7 @@ while [ $# -gt 0 ]; do
 		--commit) commit=$2; shift 2 ;;
 		--source) source=$2; shift 2 ;;
 		--repo) repo=$2; shift 2 ;;
+		--sdk-version) sdk_version=$2; shift 2 ;;
 		--prepare-only) prepare_only=1; shift ;;
 		-h|--help) usage ;;
 		*) usage ;;
@@ -102,7 +104,7 @@ extra_notice="$script_dir/../packaging/luci-app-netbird/NOTICE.tailscale-bsd3.tx
 cat "$extra_notice" >> "$workdir/src/NOTICE"
 
 if [ "$prepare_only" -eq 1 ]; then
-	echo "prepared $workdir/src"
+	report "**prepared** (no build requested)" "Assembled the candidate in \`$workdir/src\`."
 	exit 0
 fi
 

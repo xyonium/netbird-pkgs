@@ -54,6 +54,7 @@ jobs:
           scripts/install-openwrt-sdk.sh --version "$LUCI_SDK_VERSION" \
             --sha256 "$LUCI_SDK_SHA256" --dest "$RUNNER_TEMP/sdk"
           scripts/validate-luci-update.sh --sdk "$RUNNER_TEMP/sdk" \
+            --sdk-version "$LUCI_SDK_VERSION" \
             --workdir "$RUNNER_TEMP/validate" --summary "$RUNNER_TEMP/summary.md" \
             --commit "$COMMIT"
       - name: Note a failed build
@@ -76,9 +77,10 @@ jobs:
         run: |
           set -eu
           branch="luci-update-${COMMIT}"
-          if gh pr list --head "$branch" --json number --jq 'length' | grep -q '^[1-9]'; then
-            echo "PR already open for $branch"; exit 0
-          fi
+          # An existing PR must be refreshed, not skipped: its body carries the
+          # build conclusion, and a previous run may have recorded a failure that
+          # has since been fixed.
+          existing=$(gh pr list --head "$branch" --json number --jq '.[0].number // ""')
           git checkout -b "$branch"
           # The package version is whatever upstream pins: mirroring the
           # Makefile keeps the env in step with the ipk the SDK will build.
@@ -109,5 +111,10 @@ jobs:
           the next release build picks it up.
           FOOTER
           } | sed "s|@@COMMIT@@|$COMMIT|" > /tmp/pr-body.md
-          gh pr create --title "chore(luci): update to ${COMMIT}" \
-            --body-file /tmp/pr-body.md --base main --head "$branch"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file /tmp/pr-body.md
+            echo "updated PR #$existing"
+          else
+            gh pr create --title "chore(luci): update to ${COMMIT}" \
+              --body-file /tmp/pr-body.md --base main --head "$branch"
+          fi

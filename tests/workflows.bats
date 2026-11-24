@@ -320,3 +320,12 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'cat "$f"'* ]]
 }
+
+@test "luci-watch refreshes an existing PR instead of skipping it" {
+  # The PR body carries the build conclusion. Exiting early when the PR already
+  # exists leaves a stale FAILED verdict after the cause is fixed.
+  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gh pr edit"* ]]
+  [[ "$output" != *'exit 0'* ]]
+}
