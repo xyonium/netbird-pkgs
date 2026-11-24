@@ -327,5 +327,27 @@ setup() {
   run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"gh pr edit"* ]]
-  [[ "$output" != *'exit 0'* ]]
+  # The only early exit allowed is the closed-PR guard; an open PR must be
+  # refreshed, not skipped.
+  [ "$(printf '%s\n' "$output" | grep -c 'exit 0')" -eq 1 ]
+  [[ "$output" == *'if [ -n "$closed" ]'* ]]
+}
+
+@test "luci-watch prunes superseded branches through the tested script" {
+  # The deletion policy (never the current branch, never one under review) is
+  # covered by tests/prune-luci-branches.bats; the workflow must not re-implement
+  # it inline.
+  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'scripts/prune-luci-branches.sh --keep "$branch"'* ]]
+  [[ "$output" != *"git push origin --delete"* ]]
+}
+
+@test "luci-watch does not loop forever on a closed PR" {
+  # gh pr list defaults to open PRs; a closed (unmerged) PR leaves the branch
+  # behind and gh pr create then fails every week.
+  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'--state all'* ]]
+  [[ "$output" == *"not reopening it"* ]]
 }

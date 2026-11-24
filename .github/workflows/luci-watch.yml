@@ -81,6 +81,18 @@ jobs:
           # build conclusion, and a previous run may have recorded a failure that
           # has since been fixed.
           existing=$(gh pr list --head "$branch" --json number --jq '.[0].number // ""')
+          # gh pr list defaults to open PRs. A PR that was closed without merging
+          # leaves the branch behind, and gh pr create then refuses ("a pull
+          # request already exists"), turning this into a weekly failure. Leave
+          # that decision to a human: say so and stop.
+          if [ -z "$existing" ]; then
+            closed=$(gh pr list --head "$branch" --state all --json number,state \
+              --jq '[.[] | select(.state != "OPEN")][0].number // ""')
+            if [ -n "$closed" ]; then
+              echo "::warning::PR #$closed for $branch is closed or merged; not reopening it"
+              exit 0
+            fi
+          fi
           git checkout -b "$branch"
           # The package version is whatever upstream pins: mirroring the
           # Makefile keeps the env in step with the ipk the SDK will build.
@@ -118,3 +130,8 @@ jobs:
             gh pr create --title "chore(luci): update to ${COMMIT}" \
               --body-file /tmp/pr-body.md --base main --head "$branch"
           fi
+          # Every upstream commit gets its own branch name, so a run that dies
+          # after pushing but before opening its PR leaves a branch that nothing
+          # will ever look at again. scripts/prune-luci-branches.sh removes those
+          # and only those; see its header for the policy.
+          scripts/prune-luci-branches.sh --keep "$branch"
