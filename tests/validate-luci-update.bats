@@ -121,3 +121,32 @@ MK
   grep -q 'passed' "$TMP/s.md"
   grep -q '0.1.0-r26' "$TMP/s.md"
 }
+
+@test "prepares the candidate the way the release job does" {
+  # The release adds the upstream LICENSE and an upstream+ours NOTICE before
+  # building, and verify-luci-ipk.sh requires both. Skipping that made every
+  # candidate fail with "payload is missing .../NOTICE".
+  mkdir -p "$TMP/up"
+  cp -a "$SRC/." "$TMP/up/"
+  printf 'Apache-2.0 upstream\n' > "$TMP/up/LICENSE"
+  printf 'upstream notice\n' > "$TMP/up/NOTICE"
+  run "$SCRIPT" --workdir "$TMP/w" --summary "$TMP/s.md" \
+    --source "$TMP/up" --prepare-only
+  [ "$status" -eq 0 ]
+  [ -f "$TMP/w/src/LICENSE" ]
+  [ -f "$TMP/w/src/NOTICE" ]
+  grep -q 'Apache-2.0 upstream' "$TMP/w/src/LICENSE"
+  grep -q 'upstream notice' "$TMP/w/src/NOTICE"
+  # Our Tailscale BSD-3 text is appended, as in the release package.
+  grep -qi 'tailscale' "$TMP/w/src/NOTICE"
+}
+
+@test "fails when the candidate has no LICENSE" {
+  mkdir -p "$TMP/nolic"
+  cp -a "$SRC/." "$TMP/nolic/"
+  rm -f "$TMP/nolic/LICENSE"
+  run "$SCRIPT" --workdir "$TMP/w" --summary "$TMP/s.md" \
+    --source "$TMP/nolic" --prepare-only
+  [ "$status" -eq 1 ]
+  grep -q 'LICENSE' "$TMP/s.md"
+}

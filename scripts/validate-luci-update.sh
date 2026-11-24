@@ -17,12 +17,13 @@ export LC_ALL TZ
 usage() {
 	cat >&2 <<'EOF'
 usage: validate-luci-update.sh --sdk <dir> --workdir <dir> --summary <file>
-         (--commit <sha> | --source <dir>) [--repo owner/name]
+         (--commit <sha> | --source <dir>) [--repo owner/name] [--prepare-only]
 EOF
 	exit 2
 }
 
 sdk= workdir= summary= commit= source= repo=looong-cat/luci-app-netbird
+prepare_only=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--sdk) sdk=$2; shift 2 ;;
@@ -31,14 +32,18 @@ while [ $# -gt 0 ]; do
 		--commit) commit=$2; shift 2 ;;
 		--source) source=$2; shift 2 ;;
 		--repo) repo=$2; shift 2 ;;
+		--prepare-only) prepare_only=1; shift ;;
 		-h|--help) usage ;;
 		*) usage ;;
 	esac
 done
 
-[ -n "$sdk" ] && [ -n "$workdir" ] && [ -n "$summary" ] || usage
+[ -n "$workdir" ] && [ -n "$summary" ] || usage
+[ "$prepare_only" -eq 1 ] || [ -n "$sdk" ] || usage
 { [ -n "$commit" ] || [ -n "$source" ]; } || usage
-[ -d "$sdk" ] || { echo "missing SDK dir: $sdk" >&2; exit 1; }
+if [ "$prepare_only" -eq 0 ]; then
+	[ -d "$sdk" ] || { echo "missing SDK dir: $sdk" >&2; exit 1; }
+fi
 [ -n "$commit" ] || commit="(local source)"
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
@@ -77,6 +82,28 @@ else
 	[ -d "$workdir/luci-app-netbird" ] \
 		|| fail 'The upstream tarball has no `luci-app-netbird/` package directory.'
 	cp -a "$workdir/luci-app-netbird/." "$workdir/src/"
+fi
+
+# The release job adds the upstream LICENSE and an upstream+ours NOTICE into the
+# package before building, and verify-luci-ipk.sh requires both. Reproduce that
+# here, or the candidate fails verification for reasons that are not upstream's.
+upstream_root=$workdir
+[ -n "$source" ] && upstream_root=$source
+[ -f "$upstream_root/LICENSE" ] \
+	|| fail "The candidate has no LICENSE at $upstream_root/LICENSE."
+cp "$upstream_root/LICENSE" "$workdir/src/LICENSE"
+: > "$workdir/src/NOTICE"
+if [ -f "$upstream_root/NOTICE" ]; then
+	cat "$upstream_root/NOTICE" >> "$workdir/src/NOTICE"
+fi
+extra_notice="$script_dir/../packaging/luci-app-netbird/NOTICE.tailscale-bsd3.txt"
+[ -f "$extra_notice" ] \
+	|| fail "Missing $extra_notice (needed to match the release package)."
+cat "$extra_notice" >> "$workdir/src/NOTICE"
+
+if [ "$prepare_only" -eq 1 ]; then
+	echo "prepared $workdir/src"
+	exit 0
 fi
 
 [ -f "$workdir/src/Makefile" ] || fail 'The package has no Makefile.'
