@@ -288,3 +288,18 @@ setup() {
   run grep -q 'pkg-config --exists' "$script"
   [ "$status" -eq 0 ]
 }
+
+@test "the SDK dependency script handles Ubuntu 26.04's swappable coreutils" {
+  # 26.04 splits coreutils into coreutils-from-{gnu,uutils,busybox,toybox} and
+  # the runner ships a non-GNU one, so "install --version | grep GNU" fails.
+  # The GNU provider does not exist before 26.04, so the install must be
+  # conditional.
+  script="$BATS_TEST_DIRNAME/../scripts/install-sdk-deps.sh"
+  run grep -q 'coreutils-from-gnu' "$script"
+  [ "$status" -eq 0 ]
+  run grep -q 'apt-cache show coreutils-from-gnu' "$script"
+  [ "$status" -eq 0 ]
+  # And it must verify the same thing the SDK verifies.
+  run grep -q "install --version | grep -q GNU" "$script"
+  [ "$status" -eq 0 ]
+}

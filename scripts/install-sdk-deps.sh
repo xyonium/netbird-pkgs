@@ -36,4 +36,20 @@ if ! pkg-config --exists ncursesw && ! pkg-config --exists ncurses; then
 	exit 1
 fi
 
+# Ubuntu 26.04 turns coreutils into a swappable implementation and the runner
+# ships a non-GNU one, so the SDK's "install --version | grep GNU" check fails
+# with "Build dependency: Please install GNU 'install'". The GNU provider does
+# not exist on older releases, where coreutils itself is already GNU.
+if apt-cache show coreutils-from-gnu >/dev/null 2>&1; then
+	if [ "$(id -u)" -eq 0 ]; then
+		apt-get install -y --no-install-recommends coreutils-from-gnu
+	else
+		sudo apt-get install -y --no-install-recommends coreutils-from-gnu
+	fi
+fi
+
+# Same test the SDK runs.
+install --version | grep -q GNU \
+	|| { echo "GNU 'install' is required by the SDK, but 'install --version' is not GNU" >&2; exit 1; }
+
 echo "SDK host dependencies present"
