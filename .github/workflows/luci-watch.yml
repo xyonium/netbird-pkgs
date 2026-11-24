@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -57,23 +58,23 @@ jobs:
             --sdk-version "$LUCI_SDK_VERSION" \
             --workdir "$RUNNER_TEMP/validate" --summary "$RUNNER_TEMP/summary.md" \
             --commit "$COMMIT"
-      - name: Note a failed build
+      # Nothing to review, nothing to merge: say why and stop. A red run is the
+      # only signal the maintainer wants from this workflow.
+      - name: Fail on a broken candidate
         if: steps.resolve.outputs.CHANGED == '1' && steps.build.outcome != 'success'
         run: |
           set -eu
           f="$RUNNER_TEMP/summary.md"
           [ -f "$f" ] || printf '## LuCI build validation\n\n**FAILED** — the SDK build did not produce a summary.\n' > "$f"
-          printf '\n> This PR must not be merged until the build above passes.\n' >> "$f"
-          # The summary is the only place the reason is recorded; the PR that
-          # would carry it may never be created, so put it in the log too.
-          echo "::error::the candidate build failed; summary follows"
           cat "$f"
-      - name: Open PR
-        if: steps.resolve.outputs.CHANGED == '1'
+          echo "::error::the candidate build failed; it was not merged and no release was cut"
+          exit 1
+      - name: Merge the update and cut a release
+        if: steps.resolve.outputs.CHANGED == '1' && steps.build.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMIT: ${{ steps.resolve.outputs.COMMIT }}
-          OUTCOME: ${{ steps.build.outcome }}
+          OUTCOME: success
         run: |
           set -eu
           branch="luci-update-${COMMIT}"
@@ -89,8 +90,8 @@ jobs:
             closed=$(gh pr list --head "$branch" --state all --json number,state \
               --jq '[.[] | select(.state != "OPEN")][0].number // ""')
             if [ -n "$closed" ]; then
-              echo "::warning::PR #$closed for $branch is closed or merged; not reopening it"
-              exit 0
+              echo "::error::PR #$closed for $branch was closed without merging; refusing to recreate it"
+              exit 1
             fi
           fi
           git checkout -b "$branch"
@@ -100,9 +101,13 @@ jobs:
             --jq .content | base64 -d > /tmp/luci-Makefile
           scripts/update-luci-env.sh --env-file versions/luci-app-netbird.env \
             --commit "$COMMIT" --makefile /tmp/luci-Makefile
+          # The release tag is v<netbird>-r<pkg release> and sign-publish never
+          # overwrites an existing tag, so a LuCI-only change needs its own
+          # release number or the new package would never be published.
+          scripts/bump-netbird-release.sh --env-file versions/netbird.env
           git config user.name "netbird-pkgs bot"
           git config user.email "bot@users.noreply.github.com"
-          git add versions/luci-app-netbird.env
+          git add versions/luci-app-netbird.env versions/netbird.env
           git commit -m "chore(luci): update luci-app-netbird to ${COMMIT}"
           # The branch is owned by this job and named after the upstream commit,
           # so a previous run that died before opening its PR leaves a stale
@@ -125,11 +130,24 @@ jobs:
           } | sed "s|@@COMMIT@@|$COMMIT|" > /tmp/pr-body.md
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --body-file /tmp/pr-body.md
-            echo "updated PR #$existing"
+            pr=$existing
           else
             gh pr create --title "chore(luci): update to ${COMMIT}" \
-              --body-file /tmp/pr-body.md --base main --head "$branch"
+              --body-file /tmp/pr-body.md --base main --head "$branch" >/dev/null
+            pr=$(gh pr list --head "$branch" --json number --jq '.[0].number')
           fi
+          # This PR is merged with nobody reviewing the diff, so bound what it may
+          # carry: the two version files, nothing else. The build itself was
+          # already verified above.
+          changed=$(git diff --name-only "origin/main...$branch" | sort | tr '\n' ' ')
+          want="versions/luci-app-netbird.env versions/netbird.env "
+          [ "$changed" = "$want" ] \
+            || { echo "::error::unexpected change set in the PR: $changed"; exit 1; }
+          gh pr merge "$pr" --squash --delete-branch
+          echo "merged PR #$pr"
+          # The release is the point: merging the env alone publishes nothing.
+          gh workflow run build-release.yml --ref main
+          echo "dispatched build-release"
           # Every upstream commit gets its own branch name, so a run that dies
           # after pushing but before opening its PR leaves a branch that nothing
           # will ever look at again. scripts/prune-luci-branches.sh removes those

@@ -213,10 +213,6 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "luci-watch still never merges on its own" {
-  run grep -qE 'gh pr merge|--auto|gh api .*merge' "$WF/luci-watch.yml"
-  [ "$status" -eq 1 ]
-}
 
 @test "the LuCI build uses the shared SDK installer in every workflow" {
   for wf in "$WF"/*.yml; do
@@ -307,47 +303,45 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "luci-watch replaces its own stale branch and prints a failed summary" {
+@test "luci-watch replaces its own stale branch and reports a failed build" {
   # A run that dies before opening its PR leaves the branch behind, and the same
   # branch name comes back next time; without --force every later run fails on
   # non-fast-forward. And when the candidate build fails, the reason lives only
-  # in the summary file, so it must reach the log.
-  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  # in the summary file, so it must reach the log before the run stops.
+  run bash -c "awk '/Merge the update/,0' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"git push --force origin"* ]]
 
-  run bash -c "awk '/Note a failed build/,/Open PR/' '$WF/luci-watch.yml'"
+  run bash -c "awk '/Fail on a broken candidate/,/Merge the update/' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *'cat "$f"'* ]]
 }
 
 @test "luci-watch refreshes an existing PR instead of skipping it" {
-  # The PR body carries the build conclusion. Exiting early when the PR already
-  # exists leaves a stale FAILED verdict after the cause is fixed.
-  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  # The PR body carries the build conclusion, and an open PR must be brought up
+  # to date rather than left with a stale verdict. There is no success path that
+  # exits early: every exit in this step is an error.
+  run bash -c "awk '/Merge the update/,0' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"gh pr edit"* ]]
-  # The only early exit allowed is the closed-PR guard; an open PR must be
-  # refreshed, not skipped.
-  [ "$(printf '%s\n' "$output" | grep -c 'exit 0')" -eq 1 ]
-  [[ "$output" == *'if [ -n "$closed" ]'* ]]
+  [ "$(printf '%s\n' "$output" | grep -c 'exit 0')" -eq 0 ]
 }
 
 @test "luci-watch prunes superseded branches through the tested script" {
   # The deletion policy (never the current branch, never one under review) is
   # covered by tests/prune-luci-branches.bats; the workflow must not re-implement
   # it inline.
-  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  run bash -c "awk '/Merge the update/,0' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *'scripts/prune-luci-branches.sh --keep "$branch"'* ]]
   [[ "$output" != *"git push origin --delete"* ]]
 }
 
-@test "luci-watch does not loop forever on a closed PR" {
+@test "luci-watch treats a closed PR as an error" {
   # gh pr list defaults to open PRs; a closed (unmerged) PR leaves the branch
-  # behind and gh pr create then fails every week.
-  run bash -c "awk '/Open PR/,0' '$WF/luci-watch.yml'"
+  # behind and gh pr create would then fail every week. Say so and stop.
+  run bash -c "awk '/Merge the update/,0' '$WF/luci-watch.yml'"
   [ "$status" -eq 0 ]
   [[ "$output" == *'--state all'* ]]
-  [[ "$output" == *"not reopening it"* ]]
+  [[ "$output" == *"was closed without merging"* ]]
 }
