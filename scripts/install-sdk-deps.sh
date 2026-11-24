@@ -56,8 +56,12 @@ if apt-cache show coreutils-from-gnu >/dev/null 2>&1; then
 			sudo apt-get "$@"
 		fi
 	}
+	# The runner marks its provider Essential, so apt insists on
+	# --allow-remove-essential for the swap. Safe here: the GNU package
+	# Provides: coreutils, so the role is refilled in the same transaction.
 	# shellcheck disable=SC2086
-	run_apt install -y --no-install-recommends coreutils-from-gnu $drop
+	run_apt install -y --no-install-recommends --allow-remove-essential \
+		coreutils-from-gnu $drop
 fi
 
 # Same test the SDK runs.

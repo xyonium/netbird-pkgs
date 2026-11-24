@@ -302,4 +302,7 @@ setup() {
   # And it must verify the same thing the SDK verifies.
   run grep -q "install --version | grep -q GNU" "$script"
   [ "$status" -eq 0 ]
+  # The runner's provider is Essential, so the swap needs this or apt refuses.
+  run grep -q 'allow-remove-essential' "$script"
+  [ "$status" -eq 0 ]
 }
