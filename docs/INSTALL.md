@@ -59,3 +59,15 @@ opkg install netbird=<旧版本>
 - `opkg update` 验签失败：确认 `/etc/opkg/keys/<16 位指纹>` 与 feed 的 `Packages.sig` 对应；缓存 10 分钟后重试。
 - 服务不启动：`logread -e netbird`；确认 `/etc/netbird` 可写、`/var/lib/netbird` 已创建。
 - LuCI 页面无日志：确认 `/etc/netbird.env` 含 `NB_LOG_FILE=syslog`（LuCI 首次启动会写入）。
+- **同机开着 passwall / mwan3 时，代理不通但直连正常**：NetBird 启用高级路由会装
+  `ip rule add priority 105 lookup main suppress_prefixlen 0`，它的语义是「查 main
+  表时忽略所有 /0 路由」——整机不再使用默认路由，所有依赖默认路由出网的程序
+  （passwall、mwan3 等）一起失联，表现为「国内站正常、代理站超时」。
+  写入 `NB_USE_LEGACY_ROUTING=true` 到 `/etc/netbird.env` 后重启服务即可：
+
+      echo 'NB_USE_LEGACY_ROUTING=true' >> /etc/netbird.env
+      /etc/init.d/netbird restart
+      ip rule show | grep -E '105|110'    # 应无输出
+
+  代价：NetBird 改走 exclusion route 而不是策略表。没有出口节点、服务端也没下发
+  网段时不受影响；日后要用服务端推送的路由或出口节点，需重新评估这个开关。
