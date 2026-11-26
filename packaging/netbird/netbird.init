@@ -34,10 +34,12 @@ append_env_from_file() {
 		esac
 		key=${line%%=*}
 		val=${line#*=}
-		# Logging/certs, plus the upstream routing escape hatches. NetBird
-		# installs a global `ip rule ... suppress_prefixlen 0`, which makes every
-		# other policy-routing user on the box (passwall, mwan3, ...) lose the
-		# default route; NB_USE_LEGACY_ROUTING is how upstream says to avoid that.
+		# Logging/certs, plus the upstream routing escape hatches. With advanced
+		# routing on, NetBird sets net.ipv4.conf.all.src_valid_mark=1 (breaking
+		# co-existing TPROXY fwmark reverse-path checks on Linux) and installs
+		# `ip rule ... suppress_prefixlen 0` + `lookup netbird` (which can clash
+		# with other policy-routing users like passwall/mwan3).
+		# NB_USE_LEGACY_ROUTING is how upstream says to avoid both.
 		# Path-controlling variables stay out: they would let this file redirect
 		# the daemon's state or config.
 		case "$key" in

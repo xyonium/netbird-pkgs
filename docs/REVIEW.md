@@ -13,14 +13,18 @@
    执行任意 shell。改动状态/配置路径的变量（`NB_STATE_DIR`、`NB_CONFIG`、
    `NB_DNS_STATE_FILE`）仍被拒绝。
 
-   **为什么放行这三个**：NetBird 启用「高级路由」时会装一条全局规则
-   `ip rule add priority 105 lookup main suppress_prefixlen 0`，它的语义是
-   「查 main 表时忽略所有 /0 路由」，也就是**让整机所有流量都不再使用默认路由**
-   （netbird 自己的规则 110 再把它们接进 `netbird` 表）。这条规则**不区分流量来自
-   谁**，所以同机上依赖默认路由出网的其它策略路由软件（passwall/xray、mwan3 等）
-   会一起失联：具体网段的直连仍然通，需要走默认路由的代理则不通。
-   `NB_USE_LEGACY_ROUTING` 是上游为此准备的回退开关（改走 exclusion route，
-   不碰全局 ip rule）；`NB_FWMARK_BASE` 用于把 fwmark 段挪开其它 VPN 的占用。
+   **为什么放行这三个**：NetBird 启用「高级路由」（且未关闭
+   `accept_client_routes`）时有两重副作用：一是调用 `sysctl.Setup` 写入全局
+   `net.ipv4.conf.all.src_valid_mark=1`，导致同机使用 `fwmark + table local`
+   的 TPROXY 透明代理（passwall 等）在 `fib_validate_source` 反向路由校验时被
+   `accept_local=0` 当作 `martian_source` 静默丢弃；二是安装
+   `ip rule add priority 105 lookup main suppress_prefixlen 0` 与
+   `priority 110 not fwmark 0x1bd00 lookup netbird`，在查 `main` 时抑制所有 `/0`
+   路由并将剩余流量交由 `netbird` 表处理（启用出口节点或与 `mwan3` / 先启动的
+   策略路由混用时会截断默认出网路径）。
+   `NB_USE_LEGACY_ROUTING` 是上游为此准备的回退开关（跳过 `src_valid_mark` 与
+   `105/110` 规则，改在 `main` 表插 `/32` exclusion route）；`NB_FWMARK_BASE`
+   用于把 fwmark 段挪开其它 VPN 的占用。
    既往版本把这三个变量过滤掉了，用户在 `/etc/netbird.env` 里写了也**不生效**。
 5. 不启用 `service_triggers`：wan 抖动时反复重启反而加剧断连。
 

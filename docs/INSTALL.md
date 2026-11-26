@@ -59,15 +59,32 @@ opkg install netbird=<旧版本>
 - `opkg update` 验签失败：确认 `/etc/opkg/keys/<16 位指纹>` 与 feed 的 `Packages.sig` 对应；缓存 10 分钟后重试。
 - 服务不启动：`logread -e netbird`；确认 `/etc/netbird` 可写、`/var/lib/netbird` 已创建。
 - LuCI 页面无日志：确认 `/etc/netbird.env` 含 `NB_LOG_FILE=syslog`（LuCI 首次启动会写入）。
-- **同机开着 passwall / mwan3 时，代理不通但直连正常**：NetBird 启用高级路由会装
-  `ip rule add priority 105 lookup main suppress_prefixlen 0`，它的语义是「查 main
-  表时忽略所有 /0 路由」——整机不再使用默认路由，所有依赖默认路由出网的程序
-  （passwall、mwan3 等）一起失联，表现为「国内站正常、代理站超时」。
-  写入 `NB_USE_LEGACY_ROUTING=true` 到 `/etc/netbird.env` 后重启服务即可：
+- **同机开着 passwall / mwan3 时，LAN 代理不通但本机与直连正常**：NetBird 启用高级路由
+  （且未关闭 `accept_client_routes`）时有两处影响：
+  1. 会写入全局 `net.ipv4.conf.all.src_valid_mark=1`，导致 LAN 入站命中 TPROXY
+     （`fwmark 1 → table 100 local`）的包在内核源地址反查时因 `accept_local=0`
+     被当成 `martian_source` 静默丢弃（`/proc/net/stat/rt_cache` 中 `in_martian_src`
+     计数增长），即使 `table 7120` 为空且 `fwmark 1` 排在前面也会失效；
+  2. 会安装 `105: lookup main suppress_prefixlength 0` 与
+     `110: not fwmark 0x1bd00 lookup netbird`，查 `main` 时抑制 `/0` 默认路由并接管给
+     `table 7120`（与出口节点、mwan3 或抢先启动的策略路由冲突）。
 
-      echo 'NB_USE_LEGACY_ROUTING=true' >> /etc/netbird.env
-      /etc/init.d/netbird restart
-      ip rule show | grep -E '105|110'    # 应无输出
+  处置方式：
+  - **仅需被 SSH 连入（无需接收对端路由）**：在 LuCI / UCI 中关闭
+    `accept_client_routes`（`--disable-client-routes=true`），NetBird 会直接跳过
+    路由初始化，既不改 `src_valid_mark`、不装 `105/110`，也不会在 `main` 表插
+    legacy `/32` 排除路由；
+  - **需要接收对端私网路由**：在上游修复 `all.src_valid_mark=1`（见
+    `netbirdio/netbird#4575`）正式发版前，写入 `NB_USE_LEGACY_ROUTING=true` 到
+    `/etc/netbird.env` 后重启服务即可：
 
-  代价：NetBird 改走 exclusion route 而不是策略表。没有出口节点、服务端也没下发
-  网段时不受影响；日后要用服务端推送的路由或出口节点，需重新评估这个开关。
+        echo 'NB_USE_LEGACY_ROUTING=true' >> /etc/netbird.env
+        /etc/init.d/netbird restart
+        ip rule show | grep -E '105|110'            # 应无输出
+        sysctl -n net.ipv4.conf.all.src_valid_mark  # 应为 0
+
+    注意：此前若曾跑过未加该开关的高级路由，旧版本可能已把 `all.src_valid_mark`
+    设为 `1` 且服务停止前未恢复时不会自动清零，必要时重启路由或执行
+    `sysctl -w net.ipv4.conf.all.src_valid_mark=0`。legacy 代价是改走 `/32`
+    exclusion route，不应在同机同时启用 Exit Node（`0.0.0.0/0`）或接管系统 DNS
+    （`enable_dns=0`）。
